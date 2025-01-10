@@ -24,7 +24,7 @@ use thiserror::Error;
 
 use crate::config::SecretKey;
 #[cfg(feature = "db")]
-use crate::db::{ColumnType, DatabaseField, FromDbValue, SqlxValueRef, ToDbValue};
+use crate::db::{ColumnType, DatabaseField, DbValue, FromDbValue, SqlxValueRef, ToDbValue};
 use crate::request::{Request, RequestExt};
 
 #[derive(Debug, Error)]
@@ -433,7 +433,7 @@ impl FromDbValue for PasswordHash {
 
 #[cfg(feature = "db")]
 impl ToDbValue for PasswordHash {
-    fn to_sea_query_value(&self) -> sea_query::Value {
+    fn to_db_value(&self) -> DbValue {
         self.0.clone().into()
     }
 }

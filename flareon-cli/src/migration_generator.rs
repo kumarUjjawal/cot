@@ -10,10 +10,13 @@ use cargo_toml::Manifest;
 use darling::FromMeta;
 use flareon::db::migrations::{DynMigration, MigrationEngine};
 use flareon_codegen::model::{Field, Model, ModelArgs, ModelOpts, ModelType};
+use flareon_codegen::symbol_resolver::SymbolResolver;
+use petgraph::graph::DiGraph;
+use petgraph::visit::EdgeRef;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{parse_quote, Attribute, Meta, UseTree};
-use tracing::{debug, info, warn};
+use quote::{format_ident, quote, ToTokens};
+use syn::{parse_quote, Attribute, Meta};
+use tracing::{debug, info, trace};
 
 use crate::utils::find_cargo_toml;
 
@@ -73,34 +76,47 @@ impl MigrationGenerator {
     fn generate_and_write_migrations(&mut self) -> anyhow::Result<()> {
         let source_files = self.get_source_files()?;
 
-        if let Some(migration) = self.generate_migrations(source_files)? {
-            self.write_migration(migration)?;
+        if let Some(migration) = self.generate_migrations_to_write(source_files)? {
+            self.write_migration(&migration)?;
         }
 
         Ok(())
     }
 
+    /// Generate migrations as a ready-to-write source code.
+    pub fn generate_migrations_to_write(
+        &mut self,
+        source_files: Vec<SourceFile>,
+    ) -> anyhow::Result<Option<MigrationAsSource>> {
+        if let Some(migration) = self.generate_migrations(source_files)? {
+            let migration_name = migration.migration_name.clone();
+            let content = self.generate_migration_file_content(migration);
+            Ok(Some(MigrationAsSource::new(migration_name, content)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Generate migrations and return internal structures that can be used to
+    /// generate source code.
     pub fn generate_migrations(
         &mut self,
         source_files: Vec<SourceFile>,
-    ) -> anyhow::Result<Option<MigrationToWrite>> {
+    ) -> anyhow::Result<Option<GeneratedMigration>> {
         let AppState { models, migrations } = self.process_source_files(source_files)?;
         let migration_processor = MigrationProcessor::new(migrations)?;
         let migration_models = migration_processor.latest_models();
-        let (modified_models, operations) = self.generate_operations(&models, &migration_models);
 
+        let (modified_models, operations) = self.generate_operations(&models, &migration_models);
         if operations.is_empty() {
             Ok(None)
         } else {
             let migration_name = migration_processor.next_migration_name()?;
-            let dependencies = migration_processor.dependencies();
-            let content = self.generate_migration_file_content(
-                &migration_name,
-                &modified_models,
-                dependencies,
-                operations,
-            );
-            Ok(Some(MigrationToWrite::new(migration_name, content)))
+            let dependencies = migration_processor.base_dependencies();
+
+            let migration =
+                GeneratedMigration::new(migration_name, modified_models, dependencies, operations);
+            Ok(Some(migration))
         }
     }
 
@@ -173,22 +189,36 @@ impl MigrationGenerator {
         }: SourceFile,
         app_state: &mut AppState,
     ) -> anyhow::Result<()> {
-        let imports = Self::get_imports(&file, &ModulePath::from_fs_path(&path));
-        let import_resolver = SymbolResolver::new(imports);
+        trace!("Processing file: {:?}", &path);
+
+        let symbol_resolver = SymbolResolver::from_file(&file, &path);
 
         let mut migration_models = Vec::new();
         for item in file.items {
             if let syn::Item::Struct(mut item) = item {
                 for attr in &item.attrs.clone() {
                     if is_model_attr(attr) {
-                        import_resolver.resolve_struct(&mut item);
+                        symbol_resolver.resolve_struct(&mut item);
 
                         let args = Self::args_from_attr(&path, attr)?;
-                        let model_in_source = ModelInSource::from_item(item, &args)?;
+                        let model_in_source =
+                            ModelInSource::from_item(item, &args, &symbol_resolver)?;
 
                         match args.model_type {
-                            ModelType::Application => app_state.models.push(model_in_source),
-                            ModelType::Migration => migration_models.push(model_in_source),
+                            ModelType::Application => {
+                                trace!(
+                                    "Found an Application model: {}",
+                                    model_in_source.model.name.to_string()
+                                );
+                                app_state.models.push(model_in_source);
+                            }
+                            ModelType::Migration => {
+                                trace!(
+                                    "Found a Migration model: {}",
+                                    model_in_source.model.name.to_string()
+                                );
+                                migration_models.push(model_in_source);
+                            }
                             ModelType::Internal => {}
                         }
 
@@ -212,29 +242,6 @@ impl MigrationGenerator {
         }
 
         Ok(())
-    }
-
-    /// Return the list of top-level `use` statements, structs, and constants as
-    /// a list of [`VisibleSymbol`]s from the file.
-    fn get_imports(file: &syn::File, module_path: &ModulePath) -> Vec<VisibleSymbol> {
-        let mut imports = Vec::new();
-
-        for item in &file.items {
-            match item {
-                syn::Item::Use(item) => {
-                    imports.append(&mut VisibleSymbol::from_item_use(item, module_path));
-                }
-                syn::Item::Struct(item_struct) => {
-                    imports.push(VisibleSymbol::from_item_struct(item_struct, module_path));
-                }
-                syn::Item::Const(item_const) => {
-                    imports.push(VisibleSymbol::from_item_const(item_const, module_path));
-                }
-                _ => {}
-            }
-        }
-
-        imports
     }
 
     fn args_from_attr(path: &Path, attr: &Attribute) -> Result<ModelArgs, ParsingError> {
@@ -306,6 +313,7 @@ impl MigrationGenerator {
     fn make_create_model_operation(app_model: &ModelInSource) -> DynOperation {
         DynOperation::CreateModel {
             table_name: app_model.model.table_name.clone(),
+            model_ty: app_model.model.resolved_ty.clone(),
             fields: app_model.model.fields.clone(),
         }
     }
@@ -329,6 +337,7 @@ impl MigrationGenerator {
         }
 
         let mut all_field_names: Vec<_> = all_field_names.into_iter().collect();
+        // sort to ensure deterministic order
         all_field_names.sort();
 
         let mut operations = Vec::new();
@@ -366,6 +375,7 @@ impl MigrationGenerator {
     fn make_add_field_operation(app_model: &ModelInSource, field: &Field) -> DynOperation {
         DynOperation::AddField {
             table_name: app_model.model.table_name.clone(),
+            model_ty: app_model.model.resolved_ty.clone(),
             field: field.clone(),
         }
     }
@@ -398,23 +408,20 @@ impl MigrationGenerator {
         todo!()
     }
 
-    fn generate_migration_file_content(
-        &self,
-        migration_name: &str,
-        modified_models: &[ModelInSource],
-        dependencies: Vec<DynDependency>,
-        operations: Vec<DynOperation>,
-    ) -> String {
-        let operations: Vec<_> = operations
+    fn generate_migration_file_content(&self, migration: GeneratedMigration) -> String {
+        let operations: Vec<_> = migration
+            .operations
             .into_iter()
             .map(|operation| operation.repr())
             .collect();
-        let dependencies: Vec<_> = dependencies
+        let dependencies: Vec<_> = migration
+            .dependencies
             .into_iter()
             .map(|dependency| dependency.repr())
             .collect();
 
         let app_name = self.options.app_name.as_ref().unwrap_or(&self.crate_name);
+        let migration_name = &migration.migration_name;
         let migration_def = quote! {
             #[derive(Debug, Copy, Clone)]
             pub(super) struct Migration;
@@ -431,7 +438,8 @@ impl MigrationGenerator {
             }
         };
 
-        let models = modified_models
+        let models = migration
+            .modified_models
             .iter()
             .map(Self::model_to_migration_model)
             .collect::<Vec<_>>();
@@ -442,7 +450,7 @@ impl MigrationGenerator {
         Self::generate_migration(migration_def, models_def)
     }
 
-    fn write_migration(&self, migration: MigrationToWrite) -> anyhow::Result<()> {
+    fn write_migration(&self, migration: &MigrationAsSource) -> anyhow::Result<()> {
         let src_path = self
             .options
             .output_dir
@@ -513,7 +521,7 @@ pub struct SourceFile {
 
 impl SourceFile {
     #[must_use]
-    pub fn new(path: PathBuf, content: syn::File) -> Self {
+    fn new(path: PathBuf, content: syn::File) -> Self {
         assert!(
             path.is_relative(),
             "path must be relative to the src directory"
@@ -544,290 +552,6 @@ impl AppState {
             models: Vec::new(),
             migrations: Vec::new(),
         }
-    }
-}
-
-/// Represents a symbol visible in the current module. This might mean there is
-/// a `use` statement for a given type, but also, for instance, the type is
-/// defined in the current module.
-///
-/// For instance, for `use std::collections::HashMap;` the `VisibleSymbol `
-/// would be:
-/// ```ignore
-/// # /*
-/// VisibleSymbol {
-///     alias: "HashMap",
-///     full_path: "std::collections::HashMap",
-///     kind: VisibleSymbolKind::Use,
-/// }
-/// # */
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct VisibleSymbol {
-    alias: String,
-    full_path: String,
-    kind: VisibleSymbolKind,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum VisibleSymbolKind {
-    Use,
-    Struct,
-    Const,
-}
-
-impl VisibleSymbol {
-    #[must_use]
-    fn new(alias: &str, full_path: &str, kind: VisibleSymbolKind) -> Self {
-        Self {
-            alias: alias.to_string(),
-            full_path: full_path.to_string(),
-            kind,
-        }
-    }
-
-    fn full_path_parts(&self) -> impl Iterator<Item = &str> {
-        self.full_path.split("::")
-    }
-
-    fn new_use(alias: &str, full_path: &str) -> Self {
-        Self::new(alias, full_path, VisibleSymbolKind::Use)
-    }
-
-    fn from_item_use(item: &syn::ItemUse, module_path: &ModulePath) -> Vec<Self> {
-        Self::from_tree(&item.tree, module_path)
-    }
-
-    fn from_item_struct(item: &syn::ItemStruct, module_path: &ModulePath) -> Self {
-        let ident = item.ident.to_string();
-        let full_path = Self::module_path(module_path, &ident);
-
-        Self {
-            alias: ident,
-            full_path,
-            kind: VisibleSymbolKind::Struct,
-        }
-    }
-
-    fn from_item_const(item: &syn::ItemConst, module_path: &ModulePath) -> Self {
-        let ident = item.ident.to_string();
-        let full_path = Self::module_path(module_path, &ident);
-
-        Self {
-            alias: ident,
-            full_path,
-            kind: VisibleSymbolKind::Const,
-        }
-    }
-
-    fn module_path(module_path: &ModulePath, ident: &str) -> String {
-        format!("{module_path}::{ident}")
-    }
-
-    fn from_tree(tree: &UseTree, current_module: &ModulePath) -> Vec<Self> {
-        match tree {
-            UseTree::Path(path) => {
-                let ident = path.ident.to_string();
-                let resolved_path = if ident == "crate" {
-                    current_module.crate_name().to_string()
-                } else if ident == "self" {
-                    current_module.to_string()
-                } else if ident == "super" {
-                    current_module.parent().to_string()
-                } else {
-                    ident
-                };
-
-                return Self::from_tree(&path.tree, current_module)
-                    .into_iter()
-                    .map(|import| {
-                        Self::new_use(
-                            &import.alias,
-                            &format!("{}::{}", resolved_path, import.full_path),
-                        )
-                    })
-                    .collect();
-            }
-            UseTree::Name(name) => {
-                let ident = name.ident.to_string();
-                return vec![Self::new_use(&ident, &ident)];
-            }
-            UseTree::Rename(rename) => {
-                return vec![Self::new_use(
-                    &rename.rename.to_string(),
-                    &rename.ident.to_string(),
-                )];
-            }
-            UseTree::Glob(_) => {
-                warn!("Glob imports are not supported");
-            }
-            UseTree::Group(group) => {
-                return group
-                    .items
-                    .iter()
-                    .flat_map(|tree| Self::from_tree(tree, current_module))
-                    .collect();
-            }
-        }
-
-        vec![]
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ModulePath {
-    parts: Vec<String>,
-}
-
-impl ModulePath {
-    #[must_use]
-    fn from_fs_path(path: &Path) -> Self {
-        let mut parts = vec![String::from("crate")];
-
-        if path == Path::new("lib.rs") || path == Path::new("main.rs") {
-            return Self { parts };
-        }
-
-        parts.append(
-            &mut path
-                .components()
-                .map(|c| {
-                    let component_str = c.as_os_str().to_string_lossy();
-                    component_str
-                        .strip_suffix(".rs")
-                        .unwrap_or(&component_str)
-                        .to_string()
-                })
-                .collect::<Vec<_>>(),
-        );
-
-        if parts
-            .last()
-            .expect("parts must have at least one component")
-            == "mod"
-        {
-            parts.pop();
-        }
-
-        Self { parts }
-    }
-
-    #[must_use]
-    fn parent(&self) -> Self {
-        let mut parts = self.parts.clone();
-        parts.pop();
-        Self { parts }
-    }
-
-    #[must_use]
-    fn crate_name(&self) -> &str {
-        &self.parts[0]
-    }
-}
-
-impl Display for ModulePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.parts.join("::"))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SymbolResolver {
-    /// List of imports in the format `"HashMap" -> VisibleSymbol`
-    symbols: HashMap<String, VisibleSymbol>,
-}
-
-impl SymbolResolver {
-    #[must_use]
-    fn new(symbols: Vec<VisibleSymbol>) -> Self {
-        let mut symbol_map = HashMap::new();
-        for symbol in symbols {
-            symbol_map.insert(symbol.alias.clone(), symbol);
-        }
-
-        Self {
-            symbols: symbol_map,
-        }
-    }
-
-    fn resolve_struct(&self, item: &mut syn::ItemStruct) {
-        for field in &mut item.fields {
-            if let syn::Type::Path(path) = &mut field.ty {
-                self.resolve(path);
-            }
-        }
-    }
-
-    /// Checks the provided `TypePath` and resolves the full type path, if
-    /// available.
-    fn resolve(&self, path: &mut syn::TypePath) {
-        let first_segment = path.path.segments.first();
-
-        if let Some(first_segment) = first_segment {
-            if let Some(symbol) = self.symbols.get(&first_segment.ident.to_string()) {
-                let mut new_segments: Vec<_> = symbol
-                    .full_path_parts()
-                    .map(|s| syn::PathSegment {
-                        ident: syn::Ident::new(s, first_segment.ident.span()),
-                        arguments: syn::PathArguments::None,
-                    })
-                    .collect();
-
-                let first_arguments = first_segment.arguments.clone();
-                new_segments
-                    .last_mut()
-                    .expect("new_segments must have at least one element")
-                    .arguments = first_arguments;
-
-                new_segments.extend(path.path.segments.iter().skip(1).cloned());
-                path.path.segments = syn::punctuated::Punctuated::from_iter(new_segments);
-            }
-
-            for segment in &mut path.path.segments {
-                self.resolve_path_arguments(&mut segment.arguments);
-            }
-        }
-    }
-
-    fn resolve_path_arguments(&self, arguments: &mut syn::PathArguments) {
-        if let syn::PathArguments::AngleBracketed(args) = arguments {
-            for arg in &mut args.args {
-                self.resolve_generic_argument(arg);
-            }
-        }
-    }
-
-    fn resolve_generic_argument(&self, arg: &mut syn::GenericArgument) {
-        if let syn::GenericArgument::Type(syn::Type::Path(path)) = arg {
-            if let Some(new_arg) = self.try_resolve_generic_const(path) {
-                *arg = new_arg;
-            } else {
-                self.resolve(path);
-            }
-        }
-    }
-
-    fn try_resolve_generic_const(&self, path: &syn::TypePath) -> Option<syn::GenericArgument> {
-        if path.qself.is_none() && path.path.segments.len() == 1 {
-            let segment = path
-                .path
-                .segments
-                .first()
-                .expect("segments have exactly one element");
-            if segment.arguments.is_none() {
-                let ident = segment.ident.to_string();
-                if let Some(symbol) = self.symbols.get(&ident) {
-                    if symbol.kind == VisibleSymbolKind::Const {
-                        let path = &symbol.full_path;
-                        return Some(syn::GenericArgument::Const(
-                            syn::parse_str(path).expect("full_path should be a valid path"),
-                        ));
-                    }
-                }
-            }
-        }
-
-        None
     }
 }
 
@@ -886,7 +610,9 @@ impl MigrationProcessor {
         Ok(format!("m_{migration_number:04}_auto_{date_time}"))
     }
 
-    fn dependencies(&self) -> Vec<DynDependency> {
+    /// Returns the list of dependencies for the next migration, based on the
+    /// already existing and processed migrations.
+    fn base_dependencies(&self) -> Vec<DynDependency> {
         if self.migrations.is_empty() {
             return Vec::new();
         }
@@ -899,18 +625,22 @@ impl MigrationProcessor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ModelInSource {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModelInSource {
     model_item: syn::ItemStruct,
     model: Model,
 }
 
 impl ModelInSource {
-    fn from_item(item: syn::ItemStruct, args: &ModelArgs) -> anyhow::Result<Self> {
+    fn from_item(
+        item: syn::ItemStruct,
+        args: &ModelArgs,
+        symbol_resolver: &SymbolResolver,
+    ) -> anyhow::Result<Self> {
         let input: syn::DeriveInput = item.clone().into();
         let opts = ModelOpts::new_from_derive_input(&input)
             .map_err(|e| anyhow::anyhow!("cannot parse model: {}", e))?;
-        let model = opts.as_model(args)?;
+        let model = opts.as_model(args, symbol_resolver)?;
 
         Ok(Self {
             model_item: item,
@@ -919,13 +649,241 @@ impl ModelInSource {
     }
 }
 
+/// A migration generated by the CLI and before converting to a Rust
+/// source code and writing to a file.
 #[derive(Debug, Clone)]
-pub struct MigrationToWrite {
+pub struct GeneratedMigration {
+    pub migration_name: String,
+    pub modified_models: Vec<ModelInSource>,
+    pub dependencies: Vec<DynDependency>,
+    pub operations: Vec<DynOperation>,
+}
+
+impl GeneratedMigration {
+    #[must_use]
+    fn new(
+        migration_name: String,
+        modified_models: Vec<ModelInSource>,
+        mut dependencies: Vec<DynDependency>,
+        mut operations: Vec<DynOperation>,
+    ) -> Self {
+        Self::remove_cycles(&mut operations);
+        Self::toposort_operations(&mut operations);
+        dependencies.extend(Self::get_foreign_key_dependencies(&operations));
+
+        Self {
+            migration_name,
+            modified_models,
+            dependencies,
+            operations,
+        }
+    }
+
+    /// Get the list of [`DynDependency`] for all foreign keys that point
+    /// to models that are **not** created in this migration.
+    fn get_foreign_key_dependencies(operations: &[DynOperation]) -> Vec<DynDependency> {
+        let create_ops = Self::get_create_ops_map(operations);
+        let ops_adding_foreign_keys = Self::get_ops_adding_foreign_keys(operations);
+
+        let mut dependencies = Vec::new();
+        for (_index, dependency_ty) in &ops_adding_foreign_keys {
+            if !create_ops.contains_key(dependency_ty) {
+                dependencies.push(DynDependency::Model {
+                    model_type: dependency_ty.clone(),
+                });
+            }
+        }
+
+        dependencies
+    }
+
+    /// Removes dependency cycles by removing operations that create cycles.
+    ///
+    /// This method tries to minimize the number of operations added by
+    /// calculating the minimum feedback arc set of the dependency graph.
+    ///
+    /// This method modifies the `operations` parameter in place.
+    ///
+    /// # See also
+    ///
+    /// * [`Self::remove_dependency`]
+    fn remove_cycles(operations: &mut Vec<DynOperation>) {
+        let graph = Self::construct_dependency_graph(operations);
+
+        let cycle_edges = petgraph::algo::feedback_arc_set::greedy_feedback_arc_set(&graph);
+        for edge_id in cycle_edges {
+            let (from, to) = graph
+                .edge_endpoints(edge_id.id())
+                .expect("greedy_feedback_arc_set should always return valid edge refs");
+
+            let to_op = operations[to.index()].clone();
+            let from_op = &mut operations[from.index()];
+            debug!(
+                "Removing cycle by removing operation {:?} that depends on {:?}",
+                from_op, to_op
+            );
+
+            let to_add = Self::remove_dependency(from_op, &to_op);
+            operations.extend(to_add);
+        }
+    }
+
+    /// Remove a dependency between two operations.
+    ///
+    /// This is done by removing foreign keys from the `from` operation that
+    /// point to the model created by `to` operation, and creating a new
+    /// `AddField` operation for each removed foreign key.
+    #[must_use]
+    fn remove_dependency(from: &mut DynOperation, to: &DynOperation) -> Vec<DynOperation> {
+        match from {
+            DynOperation::CreateModel {
+                table_name,
+                model_ty,
+                fields,
+            } => {
+                let to_type = match to {
+                    DynOperation::CreateModel { model_ty, .. } => model_ty,
+                    DynOperation::AddField { .. } => {
+                        unreachable!(
+                            "AddField operation shouldn't be a dependency of CreateModel \
+                            because it doesn't create a new model"
+                        )
+                    }
+                };
+                trace!(
+                    "Removing foreign keys from {} to {}",
+                    model_ty.to_token_stream().to_string(),
+                    to_type.into_token_stream().to_string()
+                );
+
+                let mut result = Vec::new();
+                let (fields_to_remove, fields_to_retain): (Vec<_>, Vec<_>) = std::mem::take(fields)
+                    .into_iter()
+                    .partition(|field| is_field_foreign_key_to(field, to_type));
+                *fields = fields_to_retain;
+
+                for field in fields_to_remove {
+                    result.push(DynOperation::AddField {
+                        table_name: table_name.clone(),
+                        model_ty: model_ty.clone(),
+                        field,
+                    });
+                }
+
+                result
+            }
+            DynOperation::AddField { .. } => {
+                // AddField only links two already existing models together, so
+                // removing it shouldn't ever affect whether a graph is cyclic
+                unreachable!("AddField operation should never create cycles")
+            }
+        }
+    }
+
+    /// Topologically sort operations in this migration.
+    ///
+    /// This is to ensure that operations will be applied in the correct order.
+    /// If there are no dependencies between operations, the order of operations
+    /// will not be modified.
+    ///
+    /// This method modifies the `operations` field in place.
+    ///
+    /// # Panics
+    ///
+    /// This method should be called after removing cycles; otherwise it will
+    /// panic.
+    fn toposort_operations(operations: &mut [DynOperation]) {
+        let graph = Self::construct_dependency_graph(operations);
+
+        let sorted = petgraph::algo::toposort(&graph, None)
+            .expect("cycles shouldn't exist after removing them");
+        let mut sorted = sorted
+            .into_iter()
+            .map(petgraph::graph::NodeIndex::index)
+            .collect::<Vec<_>>();
+        flareon::__private::apply_permutation(operations, &mut sorted);
+    }
+
+    /// Construct a graph that represents reverse dependencies between
+    /// given operations.
+    ///
+    /// The graph is directed and has an edge from operation A to operation B
+    /// if operation B creates a foreign key that points to a model created by
+    /// operation A.
+    #[must_use]
+    fn construct_dependency_graph(operations: &[DynOperation]) -> DiGraph<usize, (), usize> {
+        let create_ops = Self::get_create_ops_map(operations);
+        let ops_adding_foreign_keys = Self::get_ops_adding_foreign_keys(operations);
+
+        let mut graph = DiGraph::with_capacity(operations.len(), 0);
+
+        for i in 0..operations.len() {
+            graph.add_node(i);
+        }
+        for (i, dependency_ty) in &ops_adding_foreign_keys {
+            if let Some(&dependency) = create_ops.get(dependency_ty) {
+                graph.add_edge(
+                    petgraph::graph::NodeIndex::new(dependency),
+                    petgraph::graph::NodeIndex::new(*i),
+                    (),
+                );
+            }
+        }
+
+        graph
+    }
+
+    /// Return a map of (resolved) model types to the index of the
+    /// operation that creates given model.
+    #[must_use]
+    fn get_create_ops_map(operations: &[DynOperation]) -> HashMap<syn::Type, usize> {
+        operations
+            .iter()
+            .enumerate()
+            .filter_map(|(i, op)| match op {
+                DynOperation::CreateModel { model_ty, .. } => Some((model_ty.clone(), i)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Return a list of operations that add foreign keys as tuples of
+    /// operation index and the type of the model that foreign key points to.
+    #[must_use]
+    fn get_ops_adding_foreign_keys(operations: &[DynOperation]) -> Vec<(usize, syn::Type)> {
+        operations
+            .iter()
+            .enumerate()
+            .flat_map(|(i, op)| match op {
+                DynOperation::CreateModel { fields, .. } => fields
+                    .iter()
+                    .filter_map(foreign_key_for_field)
+                    .map(|to_model| (i, to_model))
+                    .collect::<Vec<(usize, syn::Type)>>(),
+                DynOperation::AddField {
+                    field, model_ty, ..
+                } => {
+                    let mut ops = vec![(i, model_ty.clone())];
+
+                    if let Some(to_type) = foreign_key_for_field(field) {
+                        ops.push((i, to_type));
+                    }
+
+                    ops
+                }
+            })
+            .collect()
+    }
+}
+
+/// A migration represented as a generated and ready to write Rust source code.
+#[derive(Debug, Clone)]
+pub struct MigrationAsSource {
     pub name: String,
     pub content: String,
 }
 
-impl MigrationToWrite {
+impl MigrationAsSource {
     #[must_use]
     pub fn new(name: String, content: String) -> Self {
         Self { name, content }
@@ -959,6 +917,18 @@ impl Repr for Field {
         }
         if self.primary_key {
             tokens = quote! { #tokens.primary_key() }
+        }
+        if let Some(fk_spec) = self.foreign_key.clone() {
+            let to_model = &fk_spec.to_model;
+
+            tokens = quote! {
+                #tokens.foreign_key(
+                    <#to_model as ::flareon::db::Model>::TABLE_NAME,
+                    <#to_model as ::flareon::db::Model>::PRIMARY_KEY_NAME,
+                    ::flareon::db::ForeignKeyOnDeletePolicy::Restrict,
+                    ::flareon::db::ForeignKeyOnUpdatePolicy::Restrict,
+                )
+            }
         }
         tokens = quote! { #tokens.set_null(<#ty as ::flareon::db::DatabaseField>::NULLABLE) };
         if self.unique {
@@ -998,9 +968,9 @@ impl DynMigration for Migration {
 ///
 /// This is used to generate migration files.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum DynDependency {
+pub enum DynDependency {
     Migration { app: String, migration: String },
-    Model { app: String, model_name: String },
+    Model { model_type: syn::Type },
 }
 
 impl Repr for DynDependency {
@@ -1011,9 +981,12 @@ impl Repr for DynDependency {
                     ::flareon::db::migrations::MigrationDependency::migration(#app, #migration)
                 }
             }
-            Self::Model { app, model_name } => {
+            Self::Model { model_type } => {
                 quote! {
-                    ::flareon::db::migrations::MigrationDependency::model(#app, #model_name)
+                    ::flareon::db::migrations::MigrationDependency::model(
+                        <#model_type as ::flareon::db::Model>::APP_NAME,
+                        <#model_type as ::flareon::db::Model>::TABLE_NAME
+                    )
                 }
             }
         }
@@ -1024,22 +997,40 @@ impl Repr for DynDependency {
 /// runtime and is using codegen types.
 ///
 /// This is used to generate migration files.
-#[derive(Debug, Clone)]
-enum DynOperation {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DynOperation {
     CreateModel {
         table_name: String,
+        model_ty: syn::Type,
         fields: Vec<Field>,
     },
     AddField {
         table_name: String,
+        model_ty: syn::Type,
         field: Field,
     },
+}
+
+/// Returns whether given [`Field`] is a foreign key to given type.
+fn is_field_foreign_key_to(field: &Field, ty: &syn::Type) -> bool {
+    foreign_key_for_field(field).is_some_and(|to_model| &to_model == ty)
+}
+
+/// Returns the type of the model that the given field is a foreign key to.
+/// Returns [`None`] if the field is not a foreign key.
+fn foreign_key_for_field(field: &Field) -> Option<syn::Type> {
+    match field.foreign_key.clone() {
+        None => None,
+        Some(foreign_key_spec) => Some(foreign_key_spec.to_model),
+    }
 }
 
 impl Repr for DynOperation {
     fn repr(&self) -> TokenStream {
         match self {
-            Self::CreateModel { table_name, fields } => {
+            Self::CreateModel {
+                table_name, fields, ..
+            } => {
                 let fields = fields.iter().map(Repr::repr).collect::<Vec<_>>();
                 quote! {
                     ::flareon::db::migrations::Operation::create_model()
@@ -1050,7 +1041,9 @@ impl Repr for DynOperation {
                         .build()
                 }
             }
-            Self::AddField { table_name, field } => {
+            Self::AddField {
+                table_name, field, ..
+            } => {
                 let field = field.repr();
                 quote! {
                     ::flareon::db::migrations::Operation::add_field()
@@ -1101,7 +1094,7 @@ impl Error for ParsingError {}
 
 #[cfg(test)]
 mod tests {
-    use quote::ToTokens;
+    use flareon_codegen::model::ForeignKeySpec;
 
     use super::*;
 
@@ -1119,7 +1112,7 @@ mod tests {
         let migrations = vec![];
         let processor = MigrationProcessor::new(migrations).unwrap();
 
-        let next_migration_name = processor.dependencies();
+        let next_migration_name = processor.base_dependencies();
         assert_eq!(next_migration_name, vec![]);
     }
 
@@ -1132,7 +1125,7 @@ mod tests {
         }];
         let processor = MigrationProcessor::new(migrations).unwrap();
 
-        let next_migration_name = processor.dependencies();
+        let next_migration_name = processor.base_dependencies();
         assert_eq!(
             next_migration_name,
             vec![DynDependency::Migration {
@@ -1143,145 +1136,288 @@ mod tests {
     }
 
     #[test]
-    fn imports() {
-        let source = r"
-use std::collections::HashMap;
-use std::error::Error as StdError;
-use std::fmt::{Debug, Display, Formatter};
-use std::fs::*;
-use rand as r;
-use super::MyModel;
-use crate::MyOtherModel;
-use self::MyThirdModel;
-
-struct MyFourthModel {}
-
-const MY_CONSTANT: u8 = 42;
-        ";
-
-        let file = SourceFile::parse(PathBuf::from("foo/bar.rs").clone(), source).unwrap();
-        let imports =
-            MigrationGenerator::get_imports(&file.content, &ModulePath::from_fs_path(&file.path));
-
-        let expected = vec![
-            VisibleSymbol {
-                alias: "HashMap".to_string(),
-                full_path: "std::collections::HashMap".to_string(),
-                kind: VisibleSymbolKind::Use,
+    fn toposort_operations() {
+        let mut operations = vec![
+            DynOperation::AddField {
+                table_name: "table2".to_string(),
+                model_ty: parse_quote!(Table2),
+                field: Field {
+                    field_name: format_ident!("field1"),
+                    column_name: "field1".to_string(),
+                    ty: parse_quote!(i32),
+                    auto_value: false,
+                    primary_key: false,
+                    unique: false,
+                    foreign_key: Some(ForeignKeySpec {
+                        to_model: parse_quote!(Table1),
+                    }),
+                },
             },
-            VisibleSymbol {
-                alias: "StdError".to_string(),
-                full_path: "std::error::Error".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "Debug".to_string(),
-                full_path: "std::fmt::Debug".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "Display".to_string(),
-                full_path: "std::fmt::Display".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "Formatter".to_string(),
-                full_path: "std::fmt::Formatter".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "r".to_string(),
-                full_path: "rand".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "MyModel".to_string(),
-                full_path: "crate::foo::MyModel".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "MyOtherModel".to_string(),
-                full_path: "crate::MyOtherModel".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "MyThirdModel".to_string(),
-                full_path: "crate::foo::bar::MyThirdModel".to_string(),
-                kind: VisibleSymbolKind::Use,
-            },
-            VisibleSymbol {
-                alias: "MyFourthModel".to_string(),
-                full_path: "crate::foo::bar::MyFourthModel".to_string(),
-                kind: VisibleSymbolKind::Struct,
-            },
-            VisibleSymbol {
-                alias: "MY_CONSTANT".to_string(),
-                full_path: "crate::foo::bar::MY_CONSTANT".to_string(),
-                kind: VisibleSymbolKind::Const,
+            DynOperation::CreateModel {
+                table_name: "table1".to_string(),
+                model_ty: parse_quote!(Table1),
+                fields: vec![],
             },
         ];
-        assert_eq!(imports, expected);
+
+        GeneratedMigration::toposort_operations(&mut operations);
+
+        assert_eq!(operations.len(), 2);
+        if let DynOperation::CreateModel { table_name, .. } = &operations[0] {
+            assert_eq!(table_name, "table1");
+        } else {
+            panic!("Expected CreateModel operation");
+        }
+        if let DynOperation::AddField { table_name, .. } = &operations[1] {
+            assert_eq!(table_name, "table2");
+        } else {
+            panic!("Expected AddField operation");
+        }
     }
 
     #[test]
-    fn import_resolver() {
-        let resolver = SymbolResolver::new(vec![
-            VisibleSymbol::new_use("MyType", "crate::models::MyType"),
-            VisibleSymbol::new_use("HashMap", "std::collections::HashMap"),
-        ]);
+    fn remove_cycles() {
+        let mut operations = vec![
+            DynOperation::CreateModel {
+                table_name: "table1".to_string(),
+                model_ty: parse_quote!(Table1),
+                fields: vec![Field {
+                    field_name: format_ident!("field1"),
+                    column_name: "field1".to_string(),
+                    ty: parse_quote!(ForeignKey<Table2>),
+                    auto_value: false,
+                    primary_key: false,
+                    unique: false,
+                    foreign_key: Some(ForeignKeySpec {
+                        to_model: parse_quote!(Table2),
+                    }),
+                }],
+            },
+            DynOperation::CreateModel {
+                table_name: "table2".to_string(),
+                model_ty: parse_quote!(Table2),
+                fields: vec![Field {
+                    field_name: format_ident!("field1"),
+                    column_name: "field1".to_string(),
+                    ty: parse_quote!(ForeignKey<Table1>),
+                    auto_value: false,
+                    primary_key: false,
+                    unique: false,
+                    foreign_key: Some(ForeignKeySpec {
+                        to_model: parse_quote!(Table1),
+                    }),
+                }],
+            },
+        ];
 
-        let path = &mut parse_quote!(MyType);
-        resolver.resolve(path);
-        assert_eq!(
-            quote!(crate::models::MyType).to_string(),
-            path.into_token_stream().to_string()
-        );
+        GeneratedMigration::remove_cycles(&mut operations);
 
-        let path = &mut parse_quote!(HashMap<String, u8>);
-        resolver.resolve(path);
-        assert_eq!(
-            quote!(std::collections::HashMap<String, u8>).to_string(),
-            path.into_token_stream().to_string()
-        );
+        assert_eq!(operations.len(), 3);
+        if let DynOperation::CreateModel {
+            table_name, fields, ..
+        } = &operations[0]
+        {
+            assert_eq!(table_name, "table1");
+            assert!(!fields.is_empty());
+        } else {
+            panic!("Expected CreateModel operation");
+        }
+        if let DynOperation::CreateModel {
+            table_name, fields, ..
+        } = &operations[1]
+        {
+            assert_eq!(table_name, "table2");
+            assert!(fields.is_empty());
+        } else {
+            panic!("Expected CreateModel operation");
+        }
+        if let DynOperation::AddField { table_name, .. } = &operations[2] {
+            assert_eq!(table_name, "table2");
+        } else {
+            panic!("Expected AddField operation");
+        }
+    }
 
-        let path = &mut parse_quote!(Option<MyType>);
-        resolver.resolve(path);
+    #[test]
+    fn remove_dependency() {
+        let mut create_model_op = DynOperation::CreateModel {
+            table_name: "table1".to_string(),
+            model_ty: parse_quote!(Table1),
+            fields: vec![Field {
+                field_name: format_ident!("field1"),
+                column_name: "field1".to_string(),
+                ty: parse_quote!(ForeignKey<Table2>),
+                auto_value: false,
+                primary_key: false,
+                unique: false,
+                foreign_key: Some(ForeignKeySpec {
+                    to_model: parse_quote!(Table2),
+                }),
+            }],
+        };
+
+        let add_field_op = DynOperation::CreateModel {
+            table_name: "table2".to_string(),
+            model_ty: parse_quote!(Table2),
+            fields: vec![],
+        };
+
+        let additional_ops =
+            GeneratedMigration::remove_dependency(&mut create_model_op, &add_field_op);
+
+        match create_model_op {
+            DynOperation::CreateModel { fields, .. } => {
+                assert_eq!(fields.len(), 0);
+            }
+            _ => {
+                panic!("Expected from operation not to change type");
+            }
+        }
+        assert_eq!(additional_ops.len(), 1);
+        if let DynOperation::AddField { table_name, .. } = &additional_ops[0] {
+            assert_eq!(table_name, "table1");
+        } else {
+            panic!("Expected AddField operation");
+        }
+    }
+
+    #[test]
+    fn get_foreign_key_dependencies_no_foreign_keys() {
+        let operations = vec![DynOperation::CreateModel {
+            table_name: "table1".to_string(),
+            model_ty: parse_quote!(Table1),
+            fields: vec![],
+        }];
+
+        let external_dependencies = GeneratedMigration::get_foreign_key_dependencies(&operations);
+        assert!(external_dependencies.is_empty());
+    }
+
+    #[test]
+    fn get_foreign_key_dependencies_with_foreign_keys() {
+        let operations = vec![DynOperation::CreateModel {
+            table_name: "table1".to_string(),
+            model_ty: parse_quote!(Table1),
+            fields: vec![Field {
+                field_name: format_ident!("field1"),
+                column_name: "field1".to_string(),
+                ty: parse_quote!(ForeignKey<Table2>),
+                auto_value: false,
+                primary_key: false,
+                unique: false,
+                foreign_key: Some(ForeignKeySpec {
+                    to_model: parse_quote!(crate::Table2),
+                }),
+            }],
+        }];
+
+        let external_dependencies = GeneratedMigration::get_foreign_key_dependencies(&operations);
+        assert_eq!(external_dependencies.len(), 1);
         assert_eq!(
-            quote!(Option<crate::models::MyType>).to_string(),
-            path.into_token_stream().to_string()
+            external_dependencies[0],
+            DynDependency::Model {
+                model_type: parse_quote!(crate::Table2),
+            }
         );
     }
 
     #[test]
-    fn import_resolver_resolve_struct() {
-        let resolver = SymbolResolver::new(vec![
-            VisibleSymbol::new_use("MyType", "crate::models::MyType"),
-            VisibleSymbol::new_use("HashMap", "std::collections::HashMap"),
-            VisibleSymbol::new_use("LimitedString", "flareon::db::LimitedString"),
-            VisibleSymbol::new(
-                "MY_CONSTANT",
-                "crate::constants::MY_CONSTANT",
-                VisibleSymbolKind::Const,
-            ),
-        ]);
+    fn get_foreign_key_dependencies_with_multiple_foreign_keys() {
+        let operations = vec![
+            DynOperation::CreateModel {
+                table_name: "table1".to_string(),
+                model_ty: parse_quote!(Table1),
+                fields: vec![Field {
+                    field_name: format_ident!("field1"),
+                    column_name: "field1".to_string(),
+                    ty: parse_quote!(ForeignKey<Table2>),
+                    auto_value: false,
+                    primary_key: false,
+                    unique: false,
+                    foreign_key: Some(ForeignKeySpec {
+                        to_model: parse_quote!(my_crate::Table2),
+                    }),
+                }],
+            },
+            DynOperation::CreateModel {
+                table_name: "table3".to_string(),
+                model_ty: parse_quote!(Table3),
+                fields: vec![Field {
+                    field_name: format_ident!("field2"),
+                    column_name: "field2".to_string(),
+                    ty: parse_quote!(ForeignKey<Table4>),
+                    auto_value: false,
+                    primary_key: false,
+                    unique: false,
+                    foreign_key: Some(ForeignKeySpec {
+                        to_model: parse_quote!(crate::Table4),
+                    }),
+                }],
+            },
+        ];
 
-        let mut actual = parse_quote! {
-            struct Example {
-                field_1: MyType,
-                field_2: HashMap<String, MyType>,
-                field_3: Option<String>,
-                field_4: LimitedString<MY_CONSTANT>,
-            }
+        let external_dependencies = GeneratedMigration::get_foreign_key_dependencies(&operations);
+        assert_eq!(external_dependencies.len(), 2);
+        assert!(external_dependencies.contains(&DynDependency::Model {
+            model_type: parse_quote!(my_crate::Table2),
+        }));
+        assert!(external_dependencies.contains(&DynDependency::Model {
+            model_type: parse_quote!(crate::Table4),
+        }));
+    }
+
+    #[test]
+    fn make_add_field_operation() {
+        let app_model = ModelInSource {
+            model_item: parse_quote! {
+                struct TestModel {
+                    id: i32,
+                    field1: i32,
+                }
+            },
+            model: Model {
+                name: format_ident!("TestModel"),
+                original_name: "TestModel".to_string(),
+                resolved_ty: parse_quote!(TestModel),
+                model_type: Default::default(),
+                table_name: "test_model".to_string(),
+                pk_field: Field {
+                    field_name: format_ident!("id"),
+                    column_name: "id".to_string(),
+                    ty: parse_quote!(i32),
+                    auto_value: true,
+                    primary_key: true,
+                    unique: false,
+                    foreign_key: None,
+                },
+                fields: vec![],
+            },
         };
-        resolver.resolve_struct(&mut actual);
-        let expected = quote! {
-            struct Example {
-                field_1: crate::models::MyType,
-                field_2: std::collections::HashMap<String, crate::models::MyType>,
-                field_3: Option<String>,
-                field_4: flareon::db::LimitedString<{ crate::constants::MY_CONSTANT }>,
-            }
+
+        let field = Field {
+            field_name: format_ident!("new_field"),
+            column_name: "new_field".to_string(),
+            ty: parse_quote!(i32),
+            auto_value: false,
+            primary_key: false,
+            unique: false,
+            foreign_key: None,
         };
-        assert_eq!(actual.into_token_stream().to_string(), expected.to_string());
+
+        let operation = MigrationGenerator::make_add_field_operation(&app_model, &field);
+
+        match operation {
+            DynOperation::AddField {
+                table_name,
+                model_ty,
+                field: op_field,
+            } => {
+                assert_eq!(table_name, "test_model");
+                assert_eq!(model_ty, parse_quote!(TestModel));
+                assert_eq!(op_field.column_name, "new_field");
+                assert_eq!(op_field.ty, parse_quote!(i32));
+            }
+            _ => panic!("Expected AddField operation"),
+        }
     }
 }
