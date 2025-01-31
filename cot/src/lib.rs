@@ -28,26 +28,31 @@
 //!   care of making your web apps secure by default, defending it against
 //!   common modern web vulnerabilities. You can focus on building your app, not
 //!   securing it.
+//!
+//! ## Guide
+//!
+//! This is an API reference for Cot, which might not be the best place to
+//! start learning Cot. For a more gentle introduction, see the
+//! [Cot guide](https://cot.rs/guide/latest/).
+//!
+//! ## Examples
+//!
+//! To see examples of how to use Cot, see the
+//! [examples in the repository](https://github.com/cot-rs/cot/tree/master/examples).
 
-#![warn(
-    missing_debug_implementations,
-    missing_copy_implementations,
-    trivial_casts,
-    trivial_numeric_casts,
-    unreachable_pub,
-    unsafe_code,
-    unstable_features,
-    unused_import_braces,
-    unused_qualifications
+#![warn(missing_docs, rustdoc::missing_crate_level_docs)]
+#![cfg_attr(
+    docsrs,
+    feature(doc_cfg, doc_auto_cfg, rustdoc_missing_doc_code_examples)
 )]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, warn(rustdoc::missing_doc_code_examples))]
 
 extern crate self as cot;
 
 #[cfg(feature = "db")]
 pub mod db;
 mod error;
-pub mod forms;
+pub mod form;
 mod headers;
 // Not public API. Referenced by macro-generated code.
 #[doc(hidden)]
@@ -75,7 +80,6 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use axum::handler::HandlerWithoutStateExt;
-pub use bytes;
 use bytes::Bytes;
 pub use cot_macros::main;
 use derive_more::{Debug, Deref, Display, From};
@@ -91,6 +95,7 @@ use sync_wrapper::SyncWrapper;
 use tower::util::BoxCloneService;
 use tower::{Layer, Service};
 use tracing::info;
+pub use {bytes, http};
 
 use crate::admin::AdminModelManager;
 use crate::cli::Cli;
@@ -109,7 +114,7 @@ use crate::middleware::{IntoCotError, IntoCotErrorLayer, IntoCotResponse, IntoCo
 use crate::response::Response;
 use crate::router::RouterService;
 
-/// A type alias for a result that can return a `cot::Error`.
+/// A type alias for a result that can return a [`cot::Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// A type alias for an HTTP status code.
@@ -126,6 +131,12 @@ pub type Method = http::Method;
 /// and return a [`Result<Response>`].
 #[async_trait]
 pub trait RequestHandler {
+    /// Handle the request and returns a response.
+    ///
+    /// # Errors
+    ///
+    /// This method can return an error if the request handler fails to handle
+    /// the request.
     async fn handle(&self, request: Request) -> Result<Response>;
 }
 
@@ -156,27 +167,43 @@ where
 /// migrations (which can depend on other apps), etc.
 #[async_trait]
 pub trait CotApp: Send + Sync {
+    /// The name of the app.
     fn name(&self) -> &str;
 
+    /// Initializes the app.
+    ///
+    /// This method is called when the app is initialized. It can be used to
+    /// initialize whatever is needed for the app to work, possibly depending on
+    /// other apps, or the project's configuration.
+    ///
+    /// # Errors
+    ///
+    /// This method returns an error if the app fails to initialize.
     #[allow(unused_variables)]
     async fn init(&self, context: &mut AppContext) -> Result<()> {
         Ok(())
     }
 
+    /// Returns the router for the app. By default, it returns an empty router.
     fn router(&self) -> Router {
         Router::empty()
     }
 
+    /// Returns the migrations for the app. By default, it returns an empty
+    /// list.
     #[cfg(feature = "db")]
     fn migrations(&self) -> Vec<Box<SyncDynMigration>> {
         vec![]
     }
 
+    /// Returns the admin model managers for the app. By default, it returns an
+    /// empty list.
     fn admin_model_managers(&self) -> Vec<Box<dyn AdminModelManager>> {
         vec![]
     }
 
-    /// Returns a list of static files that the app serves.
+    /// Returns a list of static files that the app serves. By default, it
+    /// returns an empty list.
     fn static_files(&self) -> Vec<(String, Bytes)> {
         vec![]
     }
@@ -272,10 +299,59 @@ impl Body {
         Self::new(BodyInner::Streaming(SyncWrapper::new(Box::pin(stream))))
     }
 
+    /// Convert this [`Body`] instance into a byte array.
+    ///
+    /// This method reads the entire body into memory and returns it as a byte
+    /// array. Note that if the body is too large, this method can consume a lot
+    /// of memory. For a way to read the body while limiting the memory usage,
+    /// see [`Self::into_bytes_limited`].
+    ///
+    /// # Errors
+    ///
+    /// This method returns an error if reading the body fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::Body;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> cot::Result<()> {
+    /// let body = Body::fixed("Hello, world!");
+    /// let bytes = body.into_bytes().await?;
+    /// assert_eq!(bytes, "Hello, world!".as_bytes());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn into_bytes(self) -> std::result::Result<Bytes, Error> {
         self.into_bytes_limited(usize::MAX).await
     }
 
+    /// Convert this [`Body`] instance into a byte array.
+    ///
+    /// This is a version of [`Self::into_bytes`] that allows you to limit the
+    /// amount of memory used to read the body. If the body is larger than
+    /// the limit, an error is returned.
+    ///
+    /// # Errors
+    ///
+    /// This method returns an error if reading the body fails.
+    ///
+    /// If the body is larger than the limit, an error is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::Body;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> cot::Result<()> {
+    /// let body = Body::fixed("Hello, world!");
+    /// let bytes = body.into_bytes_limited(32).await?;
+    /// assert_eq!(bytes, "Hello, world!".as_bytes());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn into_bytes_limited(self, limit: usize) -> std::result::Result<Bytes, Error> {
         use http_body_util::BodyExt;
 
@@ -365,6 +441,23 @@ impl http_body::Body for Body {
     }
 }
 
+/// A wrapper around a handler that's used in [`CotProject`].
+///
+/// It is returned by [`CotProject::into_context`]. Typically, you don't
+/// need to interact with this type directly.
+///
+/// # Examples
+///
+/// ```
+/// use cot::CotProject;
+///
+/// # #[tokio::main]
+/// # async fn main() -> cot::Result<()> {
+/// let project = CotProject::builder().build().await?;
+/// let (context, handler) = project.into_context();
+/// # Ok(())
+/// # }
+/// ```
 pub type BoxedHandler = BoxCloneService<Request, Response, Error>;
 
 /// A Cot project, ready to be run.
@@ -404,27 +497,124 @@ impl AppContext {
         }
     }
 
+    /// Returns the configuration for the project.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    /// use cot::CotProject;
+    ///
+    /// async fn index(request: Request) -> cot::Result<Response> {
+    ///     let config = request.context().config();
+    ///     // can also be accessed via:
+    ///     let config = request.project_config();
+    ///
+    ///     let db_url = config.database_config().url();
+    ///
+    ///     // ...
+    /// #    todo!()
+    /// }
+    /// ```
     #[must_use]
     pub fn config(&self) -> &ProjectConfig {
         &self.config
     }
 
+    /// Returns the apps for the project.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    /// use cot::CotProject;
+    ///
+    /// async fn index(request: Request) -> cot::Result<Response> {
+    ///     let apps = request.context().apps();
+    ///
+    ///     // ...
+    /// #    todo!()
+    /// }
+    /// ```
     #[must_use]
     pub fn apps(&self) -> &[Box<dyn CotApp>] {
         &self.apps
     }
 
+    /// Returns the router for the project.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    /// use cot::CotProject;
+    ///
+    /// async fn index(request: Request) -> cot::Result<Response> {
+    ///     let router = request.context().config();
+    ///     // can also be accessed via:
+    ///     let router = request.router();
+    ///
+    ///     let num_routes = router.routes().len();
+    ///
+    ///     // ...
+    /// #    todo!()
+    /// }
+    /// ```
     #[must_use]
     pub fn router(&self) -> &Router {
         &self.router
     }
 
+    /// Returns the database for the project, if it is enabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    /// use cot::CotProject;
+    ///
+    /// async fn index(request: Request) -> cot::Result<Response> {
+    ///     let database = request.context().try_database();
+    ///     if let Some(database) = database {
+    ///         // do something with the database
+    ///     } else {
+    ///         // database is not enabled
+    ///     }
+    /// #    todo!()
+    /// }
+    /// ```
     #[must_use]
     #[cfg(feature = "db")]
     pub fn try_database(&self) -> Option<&Arc<Database>> {
         self.database.as_ref()
     }
 
+    /// Returns the database for the project, if it is enabled.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the database is not enabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    /// use cot::CotProject;
+    ///
+    /// async fn index(request: Request) -> cot::Result<Response> {
+    ///     let database = request.context().database();
+    ///     // can also be accessed via:
+    ///     request.db();
+    ///
+    ///     // ...
+    /// #    todo!()
+    /// }
+    /// ```
     #[must_use]
     #[cfg(feature = "db")]
     pub fn database(&self) -> &Database {
@@ -449,7 +639,7 @@ pub struct CotProjectBuilder<S> {
 
 impl CotProjectBuilder<Uninitialized> {
     #[must_use]
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             context: AppContext {
                 config: Arc::new(ProjectConfig::default()),
@@ -488,12 +678,58 @@ impl CotProjectBuilder<Uninitialized> {
         self
     }
 
+    /// Sets the configuration for the project.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::ProjectConfig;
+    /// use cot::CotProject;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> cot::Result<()> {
+    /// let cot_project = CotProject::builder()
+    ///     .config(ProjectConfig::default())
+    ///     .build()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn config(mut self, config: ProjectConfig) -> Self {
         self.context.config = Arc::new(config);
         self
     }
 
+    /// Registers an app with views.
+    ///
+    /// This method is used to register an app with views. The app's views will
+    /// be available at the given URL prefix.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// struct HelloApp;
+    ///
+    /// impl CotApp for HelloApp {
+    ///     fn name(&self) -> &'static str {
+    ///         env!("CARGO_PKG_NAME")
+    ///     }
+    /// }
+    ///
+    /// #[cot::main]
+    /// async fn main() -> cot::Result<CotProject> {
+    ///     let cot_project = CotProject::builder()
+    ///         .register_app_with_views(HelloApp, "/hello")
+    ///         .build()
+    ///         .await?;
+    ///
+    ///     Ok(cot_project)
+    /// }
+    /// ```
+    #[must_use]
     pub fn register_app_with_views<T: CotApp + 'static>(
         mut self,
         app: T,
@@ -504,11 +740,58 @@ impl CotProjectBuilder<Uninitialized> {
         self
     }
 
+    /// Registers an app.
+    ///
+    /// This method is used to register an app. The app's views, if any, will
+    /// not be available.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// struct HelloApp;
+    ///
+    /// impl CotApp for HelloApp {
+    ///     fn name(&self) -> &'static str {
+    ///         env!("CARGO_PKG_NAME")
+    ///     }
+    /// }
+    ///
+    /// #[cot::main]
+    /// async fn main() -> cot::Result<CotProject> {
+    ///     let cot_project = CotProject::builder().register_app(HelloApp).build().await?;
+    ///
+    ///     Ok(cot_project)
+    /// }
+    /// ```
+    #[must_use]
     pub fn register_app<T: CotApp + 'static>(mut self, app: T) -> Self {
         self.context.apps.push(Box::new(app));
         self
     }
 
+    /// Adds middleware to the project.
+    ///
+    /// This method is used to add middleware to the project. The middleware
+    /// will be applied to all routes in the project.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::middleware::LiveReloadMiddleware;
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// #[cot::main]
+    /// async fn main() -> cot::Result<CotProject> {
+    ///     let cot_project = CotProject::builder()
+    ///         .middleware(LiveReloadMiddleware::new())
+    ///         .build()
+    ///         .await?;
+    ///
+    ///     Ok(cot_project)
+    /// }
+    /// ```
     #[must_use]
     pub fn middleware<M>(
         self,
@@ -520,6 +803,29 @@ impl CotProjectBuilder<Uninitialized> {
         self.into_builder_with_service().middleware(middleware)
     }
 
+    /// Adds middleware to the project, with access to the project context.
+    ///
+    /// The project context might be useful for creating middlewares that need
+    /// access to the project's configuration, apps, database, etc. An example
+    /// of such middleware is the [`StaticFilesMiddleware`], which iterates
+    /// through all the registered apps and collects the static files from them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::static_files::StaticFilesMiddleware;
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> cot::Result<()> {
+    /// let cot_project = CotProject::builder()
+    ///     .middleware_with_context(StaticFilesMiddleware::from_app_context)
+    ///     .build()
+    ///     .await?;
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn middleware_with_context<M, F>(
         self,
@@ -534,6 +840,19 @@ impl CotProjectBuilder<Uninitialized> {
     }
 
     /// Builds the Cot project instance.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// #[cot::main]
+    /// async fn main() -> cot::Result<CotProject> {
+    ///     let cot_project = CotProject::builder().build().await?;
+    ///
+    ///     Ok(cot_project)
+    /// }
+    /// ```
     pub async fn build(self) -> Result<CotProject> {
         self.into_builder_with_service().build().await
     }
@@ -557,6 +876,36 @@ where
     S: Service<Request, Response = Response, Error = Error> + Send + Sync + Clone + 'static,
     S::Future: Send,
 {
+    /// Adds middleware to the project.
+    ///
+    /// This method is used to add middleware to the project. The middleware
+    /// will be applied to all routes in the project.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::middleware::LiveReloadMiddleware;
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// struct HelloApp;
+    ///
+    /// impl CotApp for HelloApp {
+    ///     fn name(&self) -> &'static str {
+    ///         env!("CARGO_PKG_NAME")
+    ///     }
+    /// }
+    ///
+    /// #[cot::main]
+    /// async fn main() -> cot::Result<CotProject> {
+    ///     let cot_project = CotProject::builder()
+    ///         .register_app(HelloApp)
+    ///         .middleware(LiveReloadMiddleware::new())
+    ///         .build()
+    ///         .await?;
+    ///
+    ///     Ok(cot_project)
+    /// }
+    /// ```
     #[must_use]
     pub fn middleware<M>(
         self,
@@ -579,6 +928,29 @@ where
         }
     }
 
+    /// Adds middleware to the project, with access to the project context.
+    ///
+    /// The project context might be useful for creating middlewares that need
+    /// access to the project's configuration, apps, database, etc. An example
+    /// of such middleware is the [`StaticFilesMiddleware`], which iterates
+    /// through all the registered apps and collects the static files from them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::static_files::StaticFilesMiddleware;
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> cot::Result<()> {
+    /// let cot_project = CotProject::builder()
+    ///     .middleware_with_context(StaticFilesMiddleware::from_app_context)
+    ///     .build()
+    ///     .await?;
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn middleware_with_context<M, F>(
         self,
@@ -621,11 +993,46 @@ impl Default for CotProjectBuilder<Uninitialized> {
 }
 
 impl CotProject {
+    /// Creates a new builder for the [`CotProject`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::{CotApp, CotProject};
+    ///
+    /// struct HelloApp;
+    ///
+    /// impl CotApp for HelloApp {
+    ///     fn name(&self) -> &'static str {
+    ///         env!("CARGO_PKG_NAME")
+    ///     }
+    /// }
+    ///
+    /// #[cot::main]
+    /// async fn main() -> cot::Result<CotProject> {
+    ///     let cot_project = CotProject::builder().build().await?;
+    ///
+    ///     Ok(cot_project)
+    /// }
+    /// ```
     #[must_use]
     pub fn builder() -> CotProjectBuilder<Uninitialized> {
         CotProjectBuilder::default()
     }
 
+    /// Returns the context and handler of the project.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cot::CotProject;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> cot::Result<()> {
+    /// let (context, handler) = CotProject::builder().build().await?.into_context();
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn into_context(self) -> (AppContext, BoxedHandler) {
         (self.context, self.handler)
@@ -736,7 +1143,7 @@ pub async fn run_at(project: CotProject, listener: tokio::net::TcpListener) -> R
     );
     if config::REGISTER_PANIC_HOOK {
         let current_hook = std::panic::take_hook();
-        let new_hook = move |hook_info: &std::panic::PanicHookInfo| {
+        let new_hook = move |hook_info: &std::panic::PanicHookInfo<'_>| {
             current_hook(hook_info);
             error_page::error_page_panic_hook(hook_info);
         };
@@ -756,6 +1163,28 @@ pub async fn run_at(project: CotProject, listener: tokio::net::TcpListener) -> R
     Ok(())
 }
 
+/// Runs the CLI for the given project.
+///
+/// This function takes a [`CotProject`] and runs the CLI for the project. You
+/// typically don't need to call this function directly. Instead, you can use
+/// [`cot::main`] which is a more ergonomic way to run the CLI.
+///
+/// # Errors
+///
+/// This function returns an error if the CLI command fails to execute.
+///
+/// # Examples
+///
+/// ```no_run
+/// use cot::{run_cli, CotProject};
+///
+/// # #[tokio::main]
+/// # async fn main() -> cot::Result<()> {
+/// let project = CotProject::builder().build().await?;
+/// run_cli(project).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub async fn run_cli(mut project: CotProject) -> Result<()> {
     std::mem::take(&mut project.cli).execute(project).await
 }

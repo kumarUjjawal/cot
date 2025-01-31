@@ -11,7 +11,7 @@
 //! all the form data you need, and derive the [`Form`] trait for it.
 //!
 //! ```
-//! use cot::forms::Form;
+//! use cot::form::Form;
 //!
 //! #[derive(Form)]
 //! struct MyForm {
@@ -20,6 +20,7 @@
 //! }
 //! ```
 
+/// Built-in form fields that can be used in a form.
 pub mod fields;
 
 use std::borrow::Cow;
@@ -39,6 +40,7 @@ pub enum FormError {
     /// form data.
     #[error("Request error: {error}")]
     RequestError {
+        /// The error that occurred while processing the request.
         #[from]
         error: Box<crate::Error>,
     },
@@ -46,13 +48,16 @@ pub enum FormError {
 
 /// The result of validating a form.
 ///
-/// This enum is used to represent the result of validating a form. The
-/// `ValidationError` variant contains the context object with the validation
-/// errors.
+/// This enum is used to represent the result of validating a form. In the case
+/// of a successful validation, the `Ok` variant contains the form object. In
+/// the case of a failed validation, the `ValidationError` variant contains the
+/// context object with the validation errors, as well as the user's input.
 #[must_use]
 #[derive(Debug, Clone)]
 pub enum FormResult<T: Form> {
+    /// The form validation passed.
     Ok(T),
+    /// The form validation failed.
     ValidationError(T::Context),
 }
 
@@ -92,6 +97,7 @@ pub enum FormFieldValidationError {
     /// The field value is invalid.
     #[error("Value is not valid for this field.")]
     InvalidValue(String),
+    /// Custom error with given message.
     #[error("{0}")]
     Custom(Cow<'static, str>),
 }
@@ -124,9 +130,12 @@ impl FormFieldValidationError {
     }
 }
 
+/// An enum indicating the target of a form validation error.
 #[derive(Debug)]
 pub enum FormErrorTarget<'a> {
+    /// An error targetting a single field.
     Field(&'a str),
+    /// An error targetting the entire form.
     Form,
 }
 
@@ -144,7 +153,7 @@ pub enum FormErrorTarget<'a> {
 /// type.
 ///
 /// ```rust
-/// use cot::forms::Form;
+/// use cot::form::Form;
 ///
 /// #[derive(Form)]
 /// struct MyForm {
@@ -225,20 +234,21 @@ pub trait FormContext: Debug {
     fn set_value(
         &mut self,
         field_id: &str,
-        value: Cow<str>,
+        value: Cow<'_, str>,
     ) -> Result<(), FormFieldValidationError>;
 
     /// Adds a validation error to the form context.
-    fn add_error(&mut self, target: FormErrorTarget, error: FormFieldValidationError) {
+    fn add_error(&mut self, target: FormErrorTarget<'_>, error: FormFieldValidationError) {
         self.errors_for_mut(target).push(error);
     }
 
     /// Returns the validation errors for a target in the form context.
-    fn errors_for(&self, target: FormErrorTarget) -> &[FormFieldValidationError];
+    fn errors_for(&self, target: FormErrorTarget<'_>) -> &[FormFieldValidationError];
 
     /// Returns a mutable reference to the validation errors for a target in the
     /// form context.
-    fn errors_for_mut(&mut self, target: FormErrorTarget) -> &mut Vec<FormFieldValidationError>;
+    fn errors_for_mut(&mut self, target: FormErrorTarget<'_>)
+        -> &mut Vec<FormFieldValidationError>;
 
     /// Returns whether the form context has any validation errors.
     fn has_errors(&self) -> bool;
@@ -259,6 +269,7 @@ impl<T: FormContext> Render for T {
 /// Generic options valid for all types of form fields.
 #[derive(Debug)]
 pub struct FormFieldOptions {
+    /// The HTML ID of the form field.
     pub id: String,
     /// Whether the field is required. Note that this really only adds
     /// "required" field to the HTML input element, since by default all
@@ -297,7 +308,7 @@ pub trait FormField: Render {
     ///
     /// This method should convert the value to the appropriate type for the
     /// field, such as a number for a number field.
-    fn set_value(&mut self, value: Cow<str>);
+    fn set_value(&mut self, value: Cow<'_, str>);
 }
 
 /// A version of [`FormField`] that can be used in a dynamic context.
@@ -308,12 +319,16 @@ pub trait FormField: Render {
 ///
 /// This trait is implemented for all types that implement [`FormField`].
 pub trait DynFormField {
+    /// Returns the generic options for the form field.
     fn dyn_options(&self) -> &FormFieldOptions;
 
+    /// Returns the HTML ID of the form field.
     fn dyn_id(&self) -> &str;
 
-    fn dyn_set_value(&mut self, value: Cow<str>);
+    /// Sets the string value of the form field.
+    fn dyn_set_value(&mut self, value: Cow<'_, str>);
 
+    /// Renders the form field as HTML.
     fn dyn_render(&self) -> Html;
 }
 
@@ -326,7 +341,7 @@ impl<T: FormField> DynFormField for T {
         FormField::id(self)
     }
 
-    fn dyn_set_value(&mut self, value: Cow<str>) {
+    fn dyn_set_value(&mut self, value: Cow<'_, str>) {
         FormField::set_value(self, value);
     }
 

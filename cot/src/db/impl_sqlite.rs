@@ -1,3 +1,5 @@
+//! Database interface implementation – SQLite backend.
+
 use sea_query_binder::SqlxValues;
 
 use crate::db::sea_query_db::impl_sea_query_db_backend;
@@ -19,10 +21,13 @@ impl DatabaseSqlite {
         // No changes are needed for SQLite
     }
 
+    #[allow(clippy::unnecessary_wraps)] // to have a unified interface between database impls
     fn last_inserted_row_id_for(result: &sqlx::sqlite::SqliteQueryResult) -> Option<u64> {
+        #[allow(clippy::cast_sign_loss)]
         Some(result.last_insert_rowid() as u64)
     }
 
+    #[allow(clippy::unused_self)] // to have a unified interface between database impls
     pub(super) fn sea_query_column_type_for(
         &self,
         column_type: crate::db::ColumnType,

@@ -48,31 +48,197 @@ mod private {
 /// outside the context of Cot.
 #[async_trait]
 pub trait RequestExt: private::Sealed {
+    /// Get the application context.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let context = request.context();
+    ///     // ... do something with the context
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn context(&self) -> &crate::AppContext;
 
+    /// Get the project configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let config = request.project_config();
+    ///     // ... do something with the config
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn project_config(&self) -> &crate::config::ProjectConfig;
 
+    /// Get the router.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let router = request.router();
+    ///     // ... do something with the router
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn router(&self) -> &Router;
 
+    /// Get the route name, or [`None`] if the request is not routed or doesn't
+    /// have a route name.
+    ///
+    /// This is mainly useful for use in templates, where you want to know which
+    /// route is being rendered, for instance to mark the active tab.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let route_name = request.route_name();
+    ///     // ... do something with the route name
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn route_name(&self) -> Option<&str>;
 
+    /// Get the path parameters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let path_params = request.path_params();
+    ///     // ... do something with the path params
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn path_params(&self) -> &PathParams;
 
+    /// Get the path parameters mutably.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let path_params = request.path_params_mut();
+    ///     // ... do something with the path params
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn path_params_mut(&mut self) -> &mut PathParams;
 
+    /// Get the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let db = request.db();
+    ///     // ... do something with the database
+    ///     # todo!()
+    /// }
+    /// ```
     #[cfg(feature = "db")]
     #[must_use]
     fn db(&self) -> &Database;
 
+    /// Get the session object.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn hello(request: Request) -> cot::Result<Response> {
+    ///     let name: String = request
+    ///         .session()
+    ///         .get("user_name")
+    ///         .await
+    ///         .expect("Invalid session value")
+    ///         .unwrap_or_default();
+    ///     println!("Hello, {}!", name);
+    ///
+    ///     // ...
+    ///     # todo!()
+    /// }
+    ///
+    /// async fn set_name(mut request: Request) -> cot::Result<Response> {
+    ///     request
+    ///         .session_mut()
+    ///         .insert("user_name", "test_user")
+    ///         .await
+    ///         .unwrap();
+    ///
+    ///     // ...
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn session(&self) -> &Session;
 
+    /// Get the session object mutably.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn hello(request: Request) -> cot::Result<Response> {
+    ///     let name: String = request
+    ///         .session()
+    ///         .get("user_name")
+    ///         .await
+    ///         .expect("Invalid session value")
+    ///         .unwrap_or_default();
+    ///     println!("Hello, {}!", name);
+    ///
+    ///     // ...
+    ///     # todo!()
+    /// }
+    ///
+    /// async fn set_name(mut request: Request) -> cot::Result<Response> {
+    ///     request
+    ///         .session_mut()
+    ///         .insert("user_name", "test_user")
+    ///         .await
+    ///         .unwrap();
+    ///
+    ///     // ...
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn session_mut(&mut self) -> &mut Session;
 
@@ -121,9 +287,41 @@ pub trait RequestExt: private::Sealed {
     #[cfg(feature = "json")]
     async fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
 
+    /// Get the content type of the request.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     let content_type = request.content_type();
+    ///     // ... do something with the content type
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     fn content_type(&self) -> Option<&http::HeaderValue>;
 
+    /// Expect the content type of the request to be the given value.
+    ///
+    /// # Errors
+    ///
+    /// Throws an error if the content type is not the expected value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// async fn my_handler(mut request: Request) -> cot::Result<Response> {
+    ///     request.expect_content_type("application/json")?;
+    ///     // ...
+    ///     # todo!()
+    /// }
+    /// ```
     fn expect_content_type(&mut self, expected: &'static str) -> Result<()>;
 }
 
@@ -229,6 +427,8 @@ impl RequestExt for Request {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct RouteName(pub(crate) String);
 
+/// Path parameters extracted from the request URL, and available as a map of
+/// strings.
 #[derive(Debug, Clone)]
 pub struct PathParams {
     params: IndexMap<String, String>,
@@ -292,7 +492,7 @@ impl PathParams {
     }
 }
 
-pub(crate) fn query_pairs(bytes: &Bytes) -> impl Iterator<Item = (Cow<str>, Cow<str>)> {
+pub(crate) fn query_pairs(bytes: &Bytes) -> impl Iterator<Item = (Cow<'_, str>, Cow<'_, str>)> {
     form_urlencoded::parse(bytes.as_ref())
 }
 

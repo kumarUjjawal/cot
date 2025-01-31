@@ -1,3 +1,9 @@
+//! Path matching and routing.
+//!
+//! This module provides a path matcher that can be used to match paths against
+//! a given pattern. It also provides a way to reverse paths to their original
+//! form given a set of parameters.
+
 use std::collections::HashMap;
 use std::fmt::Display;
 
@@ -12,13 +18,13 @@ pub(super) struct PathMatcher {
 impl PathMatcher {
     #[must_use]
     pub(crate) fn new<T: Into<String>>(path_pattern: T) -> Self {
-        let path_pattern = path_pattern.into();
-
         #[derive(Debug, Copy, Clone)]
         enum State {
             Literal { start: usize },
             Param { start: usize },
         }
+
+        let path_pattern = path_pattern.into();
 
         let mut parts = Vec::new();
         let mut state = State::Literal { start: 0 };
@@ -182,6 +188,19 @@ impl Display for PathMatcher {
     }
 }
 
+/// A map of parameters for the [`crate::Router::reverse`] method.
+///
+/// Typically, it's only used internally via the [`crate::reverse`] macro.
+///
+/// # Examples
+///
+/// ```
+/// use cot::router::path::ReverseParamMap;
+///
+/// let mut map = ReverseParamMap::new();
+/// map.insert("id", "123");
+/// map.insert("post_id", "456");
+/// ```
 #[derive(Debug)]
 pub struct ReverseParamMap {
     params: HashMap<String, String>,
@@ -194,6 +213,15 @@ impl Default for ReverseParamMap {
 }
 
 impl ReverseParamMap {
+    /// Creates a new instance of [`ReverseParamMap`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::router::path::ReverseParamMap;
+    ///
+    /// let mut map = ReverseParamMap::new();
+    /// ```
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -201,14 +229,26 @@ impl ReverseParamMap {
         }
     }
 
+    /// Inserts a value into the map. If the key already exists, the value will
+    /// be overwritten.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::router::path::ReverseParamMap;
+    ///
+    /// let mut map = ReverseParamMap::new();
+    /// map.insert("id", "123");
+    /// map.insert("id", "456");
+    /// ```
     #[allow(clippy::needless_pass_by_value)]
     pub fn insert<K: ToString, V: ToString>(&mut self, key: K, value: V) {
         self.params.insert(key.to_string(), value.to_string());
     }
 
     #[must_use]
-    fn get(&self, key: &str) -> Option<&String> {
-        self.params.get(key)
+    fn get(&self, key: &str) -> Option<&str> {
+        self.params.get(key).map(String::as_str)
     }
 }
 
@@ -223,8 +263,10 @@ macro_rules! reverse_param_map {
     }};
 }
 
+/// An error that occurs when reversing a path with missing parameters.
 #[derive(Debug, Error)]
 pub enum ReverseError {
+    /// A parameter is missing for the reverse operation.
     #[error("Missing parameter for reverse: `{0}`")]
     MissingParam(String),
 }

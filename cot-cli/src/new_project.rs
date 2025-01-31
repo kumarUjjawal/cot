@@ -48,7 +48,7 @@ impl CotSource<'_> {
 pub fn new_project(
     path: &Path,
     project_name: &str,
-    cot_source: CotSource<'_>,
+    cot_source: &CotSource<'_>,
 ) -> anyhow::Result<()> {
     print_status_msg("Creating", &format!("Cot project `{project_name}`"));
 

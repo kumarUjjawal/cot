@@ -1,3 +1,5 @@
+//! Database interface implementation – PostgreSQL backend.
+
 use crate::db::sea_query_db::impl_sea_query_db_backend;
 
 impl_sea_query_db_backend!(DatabasePostgres: sqlx::postgres::Postgres, sqlx::postgres::PgPool, PostgresRow, PostgresValueRef, sea_query::PostgresQueryBuilder);
@@ -43,6 +45,7 @@ impl DatabasePostgres {
         None
     }
 
+    #[allow(clippy::unused_self)] // to have a unified interface between database impls
     pub(super) fn sea_query_column_type_for(
         &self,
         column_type: crate::db::ColumnType,

@@ -26,6 +26,15 @@ impl Error {
         }
     }
 
+    /// Create a new error with a custom error message.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::Error;
+    ///
+    /// let error = Error::custom("An error occurred");
+    /// ```
     #[must_use]
     pub fn custom<E>(error: E) -> Self
     where
@@ -78,7 +87,7 @@ impl_error_from_repr!(rinja::Error);
 impl_error_from_repr!(crate::router::path::ReverseError);
 #[cfg(feature = "db")]
 impl_error_from_repr!(crate::db::DatabaseError);
-impl_error_from_repr!(crate::forms::FormError);
+impl_error_from_repr!(crate::form::FormError);
 impl_error_from_repr!(crate::auth::AuthError);
 #[cfg(feature = "json")]
 impl_error_from_repr!(serde_json::Error);
@@ -117,24 +126,24 @@ pub(crate) enum ErrorRepr {
     /// An error occurred while trying to reverse a route (e.g. due to missing
     /// parameters).
     #[error("Failed to reverse route: {0}")]
-    ReverseError(#[from] crate::router::path::ReverseError),
+    ReverseRoute(#[from] crate::router::path::ReverseError),
     /// An error occurred while trying to render a template.
     #[error("Failed to render template: {0}")]
     TemplateRender(#[from] rinja::Error),
     /// An error occurred while communicating with the database.
     #[error("Database error: {0}")]
     #[cfg(feature = "db")]
-    DatabaseError(#[from] crate::db::DatabaseError),
+    Database(#[from] crate::db::DatabaseError),
     /// An error occurred while parsing a form.
     #[error("Failed to process a form: {0}")]
-    FormError(#[from] crate::forms::FormError),
+    Form(#[from] crate::form::FormError),
     /// An error occurred while trying to authenticate a user.
     #[error("Failed to authenticate user: {0}")]
-    AuthenticationError(#[from] crate::auth::AuthError),
+    Authentication(#[from] crate::auth::AuthError),
     /// An error occurred while trying to serialize or deserialize JSON.
     #[error("JSON error: {0}")]
     #[cfg(feature = "json")]
-    JsonError(#[from] serde_json::Error),
+    Json(#[from] serde_json::Error),
     /// An error occurred inside a middleware-wrapped view.
     #[error("{source}")]
     MiddlewareWrapped {

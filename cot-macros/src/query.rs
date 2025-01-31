@@ -7,14 +7,14 @@ use syn::Token;
 use crate::cot_ident;
 
 #[derive(Debug)]
-pub struct Query {
+pub(crate) struct Query {
     model_name: syn::Type,
     _comma: Token![,],
     expr: Expr,
 }
 
 impl Parse for Query {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         Ok(Self {
             model_name: input.parse()?,
             _comma: input.parse()?,
@@ -82,6 +82,10 @@ pub(super) fn expr_to_tokens(model_name: &syn::Type, expr: Expr) -> TokenStream 
         }
         Expr::Eq(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "eq", "ExprEq"),
         Expr::Ne(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "ne", "ExprEq"),
+        Expr::Lt(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "lt", "ExprOrd"),
+        Expr::Lte(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "lte", "ExprOrd"),
+        Expr::Gt(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "gt", "ExprOrd"),
+        Expr::Gte(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "gte", "ExprOrd"),
         Expr::Add(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "add", "ExprAdd"),
         Expr::Sub(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "sub", "ExprSub"),
         Expr::Mul(lhs, rhs) => handle_binary_comparison(model_name, *lhs, *rhs, "mul", "ExprMul"),

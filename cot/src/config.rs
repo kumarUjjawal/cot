@@ -42,7 +42,7 @@ pub(crate) const REGISTER_PANIC_HOOK: bool = true;
 /// This is all the project-specific configuration data that can (and makes
 /// sense to) be expressed in a TOML configuration file.
 #[derive(Debug, Clone, Builder)]
-#[builder(build_fn(skip))]
+#[builder(build_fn(skip, error = std::convert::Infallible))]
 pub struct ProjectConfig {
     /// The secret key used for signing cookies and other sensitive data. This
     /// is a cryptographic key, should be kept secret, and should a set to a
@@ -69,11 +69,30 @@ pub struct ProjectConfig {
 }
 
 impl ProjectConfigBuilder {
+    /// Sets the authentication backend to use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::auth::NoAuthBackend;
+    /// use cot::config::ProjectConfig;
+    ///
+    /// let config = ProjectConfig::builder().auth_backend(NoAuthBackend).build();
+    /// ```
     pub fn auth_backend<T: AuthBackend + 'static>(&mut self, auth_backend: T) -> &mut Self {
         self.auth_backend = Some(Arc::new(auth_backend));
         self
     }
 
+    /// Builds the project configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::ProjectConfig;
+    ///
+    /// let config = ProjectConfig::builder().build();
+    /// ```
     #[must_use]
     pub fn build(&self) -> ProjectConfig {
         ProjectConfig {
@@ -89,20 +108,75 @@ impl ProjectConfigBuilder {
     }
 }
 
+/// The configuration for the database.
+///
+/// This is used to configure the database connection. It's useful as part of
+/// the [`ProjectConfig`] struct.
+///
+/// # Examples
+///
+/// ```
+/// use cot::config::DatabaseConfig;
+///
+/// let config = DatabaseConfig::builder().url("sqlite::memory:").build();
+/// ```
 #[cfg(feature = "db")]
 #[derive(Debug, Clone, Builder)]
+#[builder(build_fn(skip, error = std::convert::Infallible))]
 pub struct DatabaseConfig {
     #[builder(setter(into))]
     url: String,
 }
 
 #[cfg(feature = "db")]
+impl DatabaseConfigBuilder {
+    /// Builds the database configuration.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the database URL is not set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::DatabaseConfig;
+    ///
+    /// let config = DatabaseConfig::builder().url("sqlite::memory:").build();
+    /// ```
+    #[must_use]
+    pub fn build(&self) -> DatabaseConfig {
+        DatabaseConfig {
+            url: self.url.clone().expect("Database URL is required"),
+        }
+    }
+}
+
+#[cfg(feature = "db")]
 impl DatabaseConfig {
+    /// Create a new [`DatabaseConfigBuilder`] to build a [`DatabaseConfig`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::DatabaseConfig;
+    ///
+    /// let config = DatabaseConfig::builder().url("sqlite::memory:").build();
+    /// ```
     #[must_use]
     pub fn builder() -> DatabaseConfigBuilder {
         DatabaseConfigBuilder::default()
     }
 
+    /// Get the URL stored in the database config.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::DatabaseConfig;
+    ///
+    /// let config = DatabaseConfig::builder().url("sqlite::memory:").build();
+    /// assert_eq!(config.url(), "sqlite::memory:");
+    /// ```
     #[must_use]
     pub fn url(&self) -> &str {
         &self.url
@@ -137,26 +211,89 @@ fn default_auth_backend() -> Arc<dyn AuthBackend> {
 }
 
 impl ProjectConfig {
+    /// Create a new [`ProjectConfigBuilder`] to build a [`ProjectConfig`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::ProjectConfig;
+    ///
+    /// let config = ProjectConfig::builder().build();
+    /// ```
     #[must_use]
     pub fn builder() -> ProjectConfigBuilder {
         ProjectConfigBuilder::default()
     }
 
+    /// Get the secret key stored in the project configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{ProjectConfig, SecretKey};
+    ///
+    /// let config = ProjectConfig::builder()
+    ///     .secret_key(SecretKey::new(&[1, 2, 3]))
+    ///     .build();
+    /// assert_eq!(config.secret_key().as_bytes(), &[1, 2, 3]);
+    /// ```
     #[must_use]
     pub fn secret_key(&self) -> &SecretKey {
         &self.secret_key
     }
 
+    /// Get the fallback secret keys stored in the project configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{ProjectConfig, SecretKey};
+    ///
+    /// let config = ProjectConfig::builder()
+    ///     .secret_key(SecretKey::new(&[1, 2, 3]))
+    ///     .fallback_secret_keys(vec![SecretKey::new(&[4, 5, 6])])
+    ///     .build();
+    /// assert_eq!(config.fallback_secret_keys(), &[SecretKey::new(&[4, 5, 6])]);
+    /// ```
     #[must_use]
     pub fn fallback_secret_keys(&self) -> &[SecretKey] {
         &self.fallback_secret_keys
     }
 
+    /// Get the authentication backend stored in the project configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::auth::UserId;
+    /// use cot::request::{Request, RequestExt};
+    /// use cot::response::Response;
+    ///
+    /// fn index(request: Request) -> cot::Result<Response> {
+    ///     let user = request
+    ///         .project_config()
+    ///         .auth_backend()
+    ///         .get_by_id(&request, UserId::Int(123));
+    ///
+    ///     // ... do something with the user
+    ///     # todo!()
+    /// }
+    /// ```
     #[must_use]
     pub fn auth_backend(&self) -> &dyn AuthBackend {
         &*self.auth_backend
     }
 
+    /// Get the database configuration stored in the project configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::ProjectConfig;
+    ///
+    /// let config = ProjectConfig::builder().build();
+    /// assert_eq!(config.database_config().url(), "sqlite::memory:");
+    /// ```
     #[must_use]
     #[cfg(feature = "db")]
     pub fn database_config(&self) -> &DatabaseConfig {
@@ -164,21 +301,74 @@ impl ProjectConfig {
     }
 }
 
+/// A secret key.
+///
+/// This is a wrapper over a byte array, which is used to store a cryptographic
+/// key. This is useful for [`ProjectConfig::secret_key`] and
+/// [`ProjectConfig::fallback_secret_keys`], which are used to sign cookies and
+/// other sensitive data.
+///
+/// # Security
+///
+/// The implementation of the [`PartialEq`] trait for this type is constant-time
+/// to prevent timing attacks.
+///
+/// The implementation of the [`Debug`] trait for this type hides the secret key
+/// to prevent it from being leaked in logs or other debug output.
+///
+/// # Examples
+///
+/// ```
+/// use cot::config::SecretKey;
+///
+/// let key = SecretKey::new(&[1, 2, 3]);
+/// assert_eq!(key.as_bytes(), &[1, 2, 3]);
+/// ```
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct SecretKey(Box<[u8]>);
 
 impl SecretKey {
+    /// Create a new [`SecretKey`] from a byte array.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::SecretKey;
+    ///
+    /// let key = SecretKey::new(&[1, 2, 3]);
+    /// assert_eq!(key.as_bytes(), &[1, 2, 3]);
+    /// ```
     #[must_use]
     pub fn new(hash: &[u8]) -> Self {
         Self(Box::from(hash))
     }
 
+    /// Get the byte array stored in the [`SecretKey`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::SecretKey;
+    ///
+    /// let key = SecretKey::new(&[1, 2, 3]);
+    /// assert_eq!(key.as_bytes(), &[1, 2, 3]);
+    /// ```
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
+    /// Consume the [`SecretKey`] and return the byte array stored in it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::SecretKey;
+    ///
+    /// let key = SecretKey::new(&[1, 2, 3]);
+    /// assert_eq!(key.into_bytes(), Box::from([1, 2, 3]));
+    /// ```
     #[must_use]
     pub fn into_bytes(self) -> Box<[u8]> {
         self.0
