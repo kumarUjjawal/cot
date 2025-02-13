@@ -1934,7 +1934,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[cot::test]
     async fn app_default_impl() {
         let app = TestApp {};
         assert_eq!(app.name(), "mock");
@@ -1956,7 +1956,7 @@ mod tests {
     }
 
     #[cfg(feature = "live-reload")]
-    #[tokio::test]
+    #[cot::test]
     async fn project_middlewares() {
         struct TestProject;
         impl Project for TestProject {
@@ -2022,7 +2022,7 @@ mod tests {
         assert!(apps.apps.is_empty());
     }
 
-    #[tokio::test]
+    #[cot::test]
     async fn test_default_auth_backend() {
         let context = ProjectContext::new()
             .with_config(
@@ -2040,7 +2040,7 @@ mod tests {
             .is_none());
     }
 
-    #[tokio::test]
+    #[cot::test]
     #[cfg_attr(miri, ignore)] // unsupported operation: can't call foreign function `sqlite3_open_v2`
     async fn bootstrapper() {
         struct TestProject;
