@@ -357,7 +357,7 @@ impl CliTask for CollectStatic {
             .expect("required argument");
         println!("Collecting static files into {:?}", dir);
 
-        let bootstrapper = bootstrapper.with_apps();
+        let bootstrapper = bootstrapper.with_apps().with_database().await?;
         StaticFiles::from(bootstrapper.context())
             .collect_into(dir)
             .map_err(|e| Error::new(ErrorRepr::CollectStatic { source: e }))?;
@@ -414,7 +414,8 @@ mod tests {
 
     use super::*;
     use crate::config::ProjectConfig;
-    use crate::{App, AppBuilder, ProjectContext};
+    use crate::project::RegisterAppsContext;
+    use crate::{App, AppBuilder};
 
     #[test]
     fn cli_new() {
@@ -498,7 +499,7 @@ mod tests {
 
         struct TestProject;
         impl cot::Project for TestProject {
-            fn register_apps(&self, apps: &mut AppBuilder, _context: &ProjectContext<WithConfig>) {
+            fn register_apps(&self, apps: &mut AppBuilder, _context: &RegisterAppsContext) {
                 apps.register(TestApp);
             }
         }
