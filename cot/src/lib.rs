@@ -79,6 +79,7 @@ pub mod project;
 pub mod request;
 pub mod response;
 pub mod router;
+mod serializers;
 pub mod session;
 pub mod static_files;
 #[cfg(feature = "test")]
