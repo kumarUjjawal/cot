@@ -203,8 +203,8 @@ fn impl_from_request_parts_for_struct(ast: &syn::DeriveInput) -> proc_macro2::To
     let struct_name = &ast.ident;
     let cot = cot_ident();
 
-    let fields = match &ast.data {
-        Data::Struct(data_struct) => match &data_struct.fields {
+    let fields = if let Data::Struct(data_struct) = &ast.data {
+        match &data_struct.fields {
             Fields::Named(fields_named) => &fields_named.named,
             Fields::Unnamed(_) => {
                 let err = Error::custom(
@@ -213,11 +213,10 @@ fn impl_from_request_parts_for_struct(ast: &syn::DeriveInput) -> proc_macro2::To
                 return err.write_errors().into();
             }
             Fields::Unit => &Punctuated::new(),
-        },
-        _ => {
-            let err = Error::custom("Only structs can derive `FromRequestParts`");
-            return err.write_errors().into();
         }
+    } else {
+        let err = Error::custom("Only structs can derive `FromRequestParts`");
+        return err.write_errors().into();
     };
 
     let field_initializers = fields.iter().map(|field: &Field| {
