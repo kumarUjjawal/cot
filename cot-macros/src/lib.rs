@@ -5,19 +5,20 @@ mod main_fn;
 mod model;
 mod query;
 
-use darling::ast::NestedMeta;
 use darling::Error;
+use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use proc_macro_crate::crate_name;
 use quote::quote;
-use syn::{parse_macro_input, punctuated::Punctuated, Data, Field, Fields, ItemFn};
+use syn::punctuated::Punctuated;
+use syn::{Data, Field, Fields, ItemFn, parse_macro_input};
 
 use crate::admin::impl_admin_model_for_struct;
 use crate::dbtest::fn_to_dbtest;
 use crate::form::impl_form_for_struct;
 use crate::main_fn::{fn_to_cot_e2e_test, fn_to_cot_main, fn_to_cot_test};
 use crate::model::impl_model_for_struct;
-use crate::query::{query_to_tokens, Query};
+use crate::query::{Query, query_to_tokens};
 
 #[proc_macro_derive(Form, attributes(form))]
 pub fn derive_form(input: TokenStream) -> TokenStream {
@@ -210,13 +211,13 @@ fn impl_from_request_parts_for_struct(ast: &syn::DeriveInput) -> proc_macro2::To
                 let err = Error::custom(
                     "Structs with unnamed fields are not supported for `FromRequestParts`",
                 );
-                return err.write_errors().into();
+                return err.write_errors();
             }
             Fields::Unit => &Punctuated::new(),
         }
     } else {
         let err = Error::custom("Only structs can derive `FromRequestParts`");
-        return err.write_errors().into();
+        return err.write_errors();
     };
 
     let field_initializers = fields.iter().map(|field: &Field| {
