@@ -33,7 +33,7 @@ use crate::request::{Request, RequestExt};
 use crate::response::{IntoResponse, Response};
 use crate::router::{Router, Urls};
 use crate::static_files::StaticFile;
-use crate::{reverse_redirect, App, Error, Method, RequestHandler};
+use crate::{App, Error, Method, RequestHandler, reverse_redirect};
 
 struct AdminAuthenticated<T, H: Send + Sync>(H, PhantomData<fn() -> T>);
 
