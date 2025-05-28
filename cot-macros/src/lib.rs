@@ -198,5 +198,6 @@ pub(crate) fn cot_ident() -> proc_macro2::TokenStream {
 #[proc_macro_derive(FromRequestParts)]
 pub fn derive_from_request_parts(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
-    impl_from_request_parts_for_struct(&ast).into()
+    let token_stream = impl_from_request_parts_for_struct(&ast);
+    token_stream.into()
 }

@@ -61,15 +61,6 @@ pub struct BaseContext {
     static_files: StaticFiles,
 }
 
-// impl FromRequestParts for BaseContext {
-//     async fn from_request_parts(parts: &mut Parts) -> cot::Result<Self> {
-//         let urls = Urls::from_request_parts(parts).await?;
-//         let static_files = StaticFiles::from_request_parts(parts).await?;
-//
-//         Ok(Self { urls, static_files })
-//     }
-// }
-
 async fn index(
     base_context: BaseContext,
     AdminModelManagers(managers): AdminModelManagers,

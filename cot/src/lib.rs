@@ -184,19 +184,20 @@ pub type Method = http::Method;
 /// ```rust
 /// use axum::extract::FromRequestParts;
 /// use http::request::Parts;
+/// use async_trait::async_trait;
+///
+/// struct UserId;
+/// struct SessionInfo;
 ///
 /// #[derive(cot_macros::FromRequestParts)]
 /// struct AuthenticatedUser {
 ///     user_id: UserId,
 ///     session: SessionInfo,
 /// }
-/// ```
 ///
-/// This allows using `AuthenticatedUser` as a single extractor:
-///
-/// ```rust
 /// async fn handler(user: AuthenticatedUser) {
 ///     // You now have both user_id and session
+///     let _ = user;
 /// }
 /// ```
 pub use cot_macros::FromRequestParts;
