@@ -33,7 +33,7 @@ use crate::request::{Request, RequestExt};
 use crate::response::{IntoResponse, Response};
 use crate::router::{Router, Urls};
 use crate::static_files::StaticFile;
-use crate::{App, Error, Method, RequestHandler, reverse_redirect};
+use crate::{reverse_redirect, App, Error, Method, RequestHandler};
 
 struct AdminAuthenticated<T, H: Send + Sync>(H, PhantomData<fn() -> T>);
 
@@ -55,20 +55,20 @@ impl<T, H: RequestHandler<T> + Send + Sync> RequestHandler<T> for AdminAuthentic
     }
 }
 
-#[derive(Debug)]
-struct BaseContext {
+#[derive(Debug, cot::FromRequestParts)]
+pub struct BaseContext {
     urls: Urls,
     static_files: StaticFiles,
 }
 
-impl FromRequestParts for BaseContext {
-    async fn from_request_parts(parts: &mut Parts) -> cot::Result<Self> {
-        let urls = Urls::from_request_parts(parts).await?;
-        let static_files = StaticFiles::from_request_parts(parts).await?;
-
-        Ok(Self { urls, static_files })
-    }
-}
+// impl FromRequestParts for BaseContext {
+//     async fn from_request_parts(parts: &mut Parts) -> cot::Result<Self> {
+//         let urls = Urls::from_request_parts(parts).await?;
+//         let static_files = StaticFiles::from_request_parts(parts).await?;
+//
+//         Ok(Self { urls, static_files })
+//     }
+// }
 
 async fn index(
     base_context: BaseContext,
