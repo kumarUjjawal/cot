@@ -1,7 +1,8 @@
-use crate::cot_ident;
 use darling::Error;
 use quote::quote;
 use syn::{Data, Field, Fields};
+
+use crate::cot_ident;
 pub(super) fn impl_from_request_parts_for_struct(
     ast: &syn::DeriveInput,
 ) -> proc_macro2::TokenStream {

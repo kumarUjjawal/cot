@@ -6,12 +6,12 @@ mod main_fn;
 mod model;
 mod query;
 
-use darling::ast::NestedMeta;
 use darling::Error;
+use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use proc_macro_crate::crate_name;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn};
+use syn::{ItemFn, parse_macro_input};
 
 use crate::admin::impl_admin_model_for_struct;
 use crate::dbtest::fn_to_dbtest;
@@ -19,7 +19,7 @@ use crate::form::impl_form_for_struct;
 use crate::from_request::impl_from_request_parts_for_struct;
 use crate::main_fn::{fn_to_cot_e2e_test, fn_to_cot_main, fn_to_cot_test};
 use crate::model::impl_model_for_struct;
-use crate::query::{query_to_tokens, Query};
+use crate::query::{Query, query_to_tokens};
 
 #[proc_macro_derive(Form, attributes(form))]
 pub fn derive_form(input: TokenStream) -> TokenStream {
@@ -194,22 +194,23 @@ pub(crate) fn cot_ident() -> proc_macro2::TokenStream {
         }
     }
 }
-/// A derive macro that automatically implements the [`FromRequestParts`] trait for structs.
+/// A derive macro that automatically implements the [`FromRequestParts`] trait
+/// for structs.
 ///
-/// This macro generates code to extract each field of the struct from HTTP request parts,
-/// making it easy to create composite extractors that combine multiple data sources from
-/// an incoming request.
+/// This macro generates code to extract each field of the struct from HTTP
+/// request parts, making it easy to create composite extractors that combine
+/// multiple data sources from an incoming request.
 ///
-/// The macro works by calling [`FromRequestParts::from_request_parts`] on each field's type,
-/// allowing you to compose extractors seamlessly. All fields must implement the
-/// [`FromRequestParts`] trait for the derivation to work.
+/// The macro works by calling [`FromRequestParts::from_request_parts`] on each
+/// field's type, allowing you to compose extractors seamlessly. All fields must
+/// implement the [`FromRequestParts`] trait for the derivation to work.
 ///
 /// # Examples
 ///
 /// ## Named Fields
 ///
 /// ```no_run
-/// use cot::request::extractors::{Path, UrlQuery, StaticFiles};
+/// use cot::request::extractors::{Path, StaticFiles, UrlQuery};
 /// use cot::router::Urls;
 /// use cot_macros::FromRequestParts;
 ///
@@ -218,7 +219,6 @@ pub(crate) fn cot_ident() -> proc_macro2::TokenStream {
 ///     urls: Urls,
 ///     static_files: StaticFiles,
 /// }
-///
 /// ```
 #[proc_macro_derive(FromRequestParts)]
 pub fn derive_from_request_parts(input: TokenStream) -> TokenStream {

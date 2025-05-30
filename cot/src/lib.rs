@@ -161,7 +161,7 @@ pub use {bytes, http};
 
 pub use crate::handler::{BoxedHandler, RequestHandler};
 pub use crate::project::{
-    run, run_at, run_cli, App, AppBuilder, Bootstrapper, Project, ProjectContext,
+    App, AppBuilder, Bootstrapper, Project, ProjectContext, run, run_at, run_cli,
 };
 
 /// A type alias for a result that can return a [`cot::Error`].
@@ -173,15 +173,16 @@ pub type StatusCode = http::StatusCode;
 /// A type alias for an HTTP method.
 pub type Method = http::Method;
 
-/// A derive macro that automatically implements the [`FromRequestParts`] trait for structs.
+/// A derive macro that automatically implements the [`FromRequestParts`] trait
+/// for structs.
 ///
-/// This macro generates code to extract each field of the struct from HTTP request parts,
-/// making it easy to create composite extractors that combine multiple data sources from
-/// an incoming request.
+/// This macro generates code to extract each field of the struct from HTTP
+/// request parts, making it easy to create composite extractors that combine
+/// multiple data sources from an incoming request.
 ///
-/// The macro works by calling [`FromRequestParts::from_request_parts`] on each field's type,
-/// allowing you to compose extractors seamlessly. All fields must implement the
-/// [`FromRequestParts`] trait for the derivation to work.
+/// The macro works by calling [`FromRequestParts::from_request_parts`] on each
+/// field's type, allowing you to compose extractors seamlessly. All fields must
+/// implement the [`FromRequestParts`] trait for the derivation to work.
 ///
 /// # Requirements
 ///
@@ -194,7 +195,7 @@ pub type Method = http::Method;
 /// ## Named Fields
 ///
 /// ```no_run
-/// use cot::request::extractors::{Path, UrlQuery, StaticFiles};
+/// use cot::request::extractors::{Path, StaticFiles, UrlQuery};
 /// use cot::router::Urls;
 /// use cot_macros::FromRequestParts;
 /// use serde::Deserialize;

@@ -21,8 +21,9 @@ pub use cot_macros::AdminModel;
 /// Implements the [`FromRequestParts`] trait for a struct.
 ///
 /// This derive macro allows a struct to be used as a request part extractor.
-/// All fields must implement [`FromRequestParts`](crate::request::extractors::FromRequestParts),
-/// and only structs are supported (not enums or unions).
+/// All fields must implement
+/// [`FromRequestParts`](crate::request::extractors::FromRequestParts), and only
+/// structs are supported (not enums or unions).
 pub use cot_macros::FromRequestParts;
 use derive_more::Debug;
 use http::request::Parts;
@@ -39,7 +40,7 @@ use crate::request::{Request, RequestExt};
 use crate::response::{IntoResponse, Response};
 use crate::router::{Router, Urls};
 use crate::static_files::StaticFile;
-use crate::{reverse_redirect, App, Error, Method, RequestHandler};
+use crate::{App, Error, Method, RequestHandler, reverse_redirect};
 
 struct AdminAuthenticated<T, H: Send + Sync>(H, PhantomData<fn() -> T>);
 
