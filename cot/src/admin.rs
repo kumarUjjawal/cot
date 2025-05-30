@@ -18,6 +18,12 @@ use cot::request::extractors::StaticFiles;
 /// [`Form`] traits. These can also be derived using the `#[model]` and
 /// `#[derive(Form)]` attributes.
 pub use cot_macros::AdminModel;
+/// Implements the [`FromRequestParts`] trait for a struct.
+///
+/// This derive macro allows a struct to be used as a request part extractor.
+/// All fields must implement [`FromRequestParts`](crate::request::extractors::FromRequestParts),
+/// and only structs are supported (not enums or unions).
+pub use cot_macros::FromRequestParts;
 use derive_more::Debug;
 use http::request::Parts;
 use serde::Deserialize;
@@ -28,7 +34,7 @@ use crate::form::{
     Form, FormContext, FormErrorTarget, FormField, FormFieldValidationError, FormResult,
 };
 use crate::html::Html;
-use crate::request::extractors::{FromRequestParts, Path, UrlQuery};
+use crate::request::extractors::{FromRequestParts as FromRequestPartsTrait, Path, UrlQuery};
 use crate::request::{Request, RequestExt};
 use crate::response::{IntoResponse, Response};
 use crate::router::{Router, Urls};
@@ -55,7 +61,7 @@ impl<T, H: RequestHandler<T> + Send + Sync> RequestHandler<T> for AdminAuthentic
     }
 }
 
-#[derive(Debug, cot::FromRequestParts)]
+#[derive(Debug, FromRequestParts)]
 pub struct BaseContext {
     urls: Urls,
     static_files: StaticFiles,
@@ -378,7 +384,7 @@ fn get_manager(
 #[repr(transparent)]
 struct AdminModelManagers(Vec<Box<dyn AdminModelManager>>);
 
-impl FromRequestParts for AdminModelManagers {
+impl FromRequestPartsTrait for AdminModelManagers {
     async fn from_request_parts(parts: &mut Parts) -> cot::Result<Self> {
         let managers = parts
             .context()

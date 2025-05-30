@@ -173,31 +173,36 @@ pub type StatusCode = http::StatusCode;
 /// A type alias for an HTTP method.
 pub type Method = http::Method;
 
-/// Derives `FromRequestParts` for a struct.
+/// A derive macro that automatically implements the [`FromRequestParts`] trait for structs.
 ///
-/// This derive macro is intended to help extract multiple request parts
-/// in an Axum handler using a custom struct. Each field's type must
-/// implement `FromRequestParts`.
+/// This macro generates code to extract each field of the struct from HTTP request parts,
+/// making it easy to create composite extractors that combine multiple data sources from
+/// an incoming request.
 ///
-/// # Example
+/// The macro works by calling [`FromRequestParts::from_request_parts`] on each field's type,
+/// allowing you to compose extractors seamlessly. All fields must implement the
+/// [`FromRequestParts`] trait for the derivation to work.
 ///
-/// ```rust
-/// use axum::extract::FromRequestParts;
-/// use http::request::Parts;
-/// use async_trait::async_trait;
+/// # Requirements
 ///
-/// struct UserId;
-/// struct SessionInfo;
+/// - The target struct must have all fields implement [`FromRequestParts`]
+/// - Works with named fields, unnamed fields (tuple structs), and unit structs
+/// - The struct must be accessible where the macro is used
 ///
-/// #[derive(cot_macros::FromRequestParts)]
-/// struct AuthenticatedUser {
-///     user_id: UserId,
-///     session: SessionInfo,
-/// }
+/// # Examples
 ///
-/// async fn handler(user: AuthenticatedUser) {
-///     // You now have both user_id and session
-///     let _ = user;
+/// ## Named Fields
+///
+/// ```no_run
+/// use cot::request::extractors::{Path, UrlQuery, StaticFiles};
+/// use cot::router::Urls;
+/// use cot_macros::FromRequestParts;
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, FromRequestParts)]
+/// pub struct BaseContext {
+///     urls: Urls,
+///     static_files: StaticFiles,
 /// }
 /// ```
 pub use cot_macros::FromRequestParts;

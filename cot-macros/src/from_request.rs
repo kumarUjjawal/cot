@@ -2,7 +2,6 @@ use crate::cot_ident;
 use darling::Error;
 use quote::quote;
 use syn::{Data, Field, Fields};
-
 pub(super) fn impl_from_request_parts_for_struct(
     ast: &syn::DeriveInput,
 ) -> proc_macro2::TokenStream {
@@ -16,7 +15,7 @@ pub(super) fn impl_from_request_parts_for_struct(
                     let field_name = &field.ident;
                     let field_type = &field.ty;
                     quote! {
-                        #field_name: <#field_type as #cot::extract::FromRequestParts>::from_request_parts(parts).await?,
+                        #field_name: <#field_type as #cot::request::extractors::FromRequestParts>::from_request_parts(parts).await?,
                     }
                 });
                 quote! { Self { #(#initializers)* } }
@@ -26,7 +25,7 @@ pub(super) fn impl_from_request_parts_for_struct(
                 let initializers = fields_unnamed.unnamed.iter().map(|field: &Field| {
                     let field_type = &field.ty;
                     quote! {
-                        <#field_type as #cot::extract::FromRequestParts>::from_request_parts(parts).await?,
+                        <#field_type as #cot::request::extractors::FromRequestParts>::from_request_parts(parts).await?,
                     }
                 });
                 quote! { Self(#(#initializers)*) }
@@ -35,7 +34,7 @@ pub(super) fn impl_from_request_parts_for_struct(
             Fields::Unit => {
                 return quote! {
                     #[automatically_derived]
-                    impl #cot::extract::FromRequestParts for #struct_name {
+                    impl #cot::request::extractors::FromRequestParts for #struct_name {
                         async fn from_request_parts(
                             _parts: &mut #cot::http::request::Parts,
                         ) -> #cot::Result<Self> {
@@ -50,7 +49,7 @@ pub(super) fn impl_from_request_parts_for_struct(
 
     quote! {
         #[automatically_derived]
-        impl #cot::extract::FromRequestParts for #struct_name {
+        impl #cot::request::extractors::FromRequestParts for #struct_name {
             async fn from_request_parts(
                 parts: &mut #cot::http::request::Parts,
             ) -> #cot::Result<Self> {
