@@ -35,7 +35,7 @@ use crate::form::{
     Form, FormContext, FormErrorTarget, FormField, FormFieldValidationError, FormResult,
 };
 use crate::html::Html;
-use crate::request::extractors::{FromRequestParts as FromRequestPartsTrait, Path, UrlQuery};
+use crate::request::extractors::{FromRequestParts, Path, UrlQuery};
 use crate::request::{Request, RequestExt};
 use crate::response::{IntoResponse, Response};
 use crate::router::{Router, Urls};
@@ -63,7 +63,7 @@ impl<T, H: RequestHandler<T> + Send + Sync> RequestHandler<T> for AdminAuthentic
 }
 
 #[derive(Debug, FromRequestParts)]
-pub struct BaseContext {
+struct BaseContext {
     urls: Urls,
     static_files: StaticFiles,
 }
@@ -385,7 +385,7 @@ fn get_manager(
 #[repr(transparent)]
 struct AdminModelManagers(Vec<Box<dyn AdminModelManager>>);
 
-impl FromRequestPartsTrait for AdminModelManagers {
+impl FromRequestParts for AdminModelManagers {
     async fn from_request_parts(parts: &mut Parts) -> cot::Result<Self> {
         let managers = parts
             .context()
