@@ -24,7 +24,6 @@ pub use cot_macros::AdminModel;
 /// All fields must implement
 /// [`FromRequestParts`](crate::request::extractors::FromRequestParts), and only
 /// structs are supported (not enums or unions).
-pub use cot_macros::FromRequestParts;
 use derive_more::Debug;
 use http::request::Parts;
 use serde::Deserialize;

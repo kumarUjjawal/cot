@@ -1,6 +1,5 @@
 use cot::http::request::Parts;
 use cot::request::extractors::FromRequestParts;
-use cot_macros::FromRequestParts;
 
 #[derive(FromRequestParts)]
 struct MyStruct {
