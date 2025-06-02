@@ -57,4 +57,5 @@ fn attr_main() {
 fn derive_from_struct() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/derive_from_request_parts.rs");
+    t.compile_fail("tests/ui/derive_from_request_parts_enum.rs");
 }

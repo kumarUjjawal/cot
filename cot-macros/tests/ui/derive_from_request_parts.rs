@@ -7,6 +7,9 @@ struct MyStruct {
     session_id: DummyExtractor,
 }
 
+#[derive(FromRequestParts)]
+struct MyUnitStruct;
+
 struct DummyExtractor;
 
 impl FromRequestParts for DummyExtractor {
