@@ -1,5 +1,5 @@
-use cot::http::Request;
 use cot::http::request::Parts;
+use cot::http::Request;
 use cot::request::extractors::FromRequestParts;
 
 #[derive(FromRequestParts)]
@@ -23,23 +23,26 @@ impl FromRequestParts for DummyExtractor {
     }
 }
 
-#[cot::test]
+#[tokio::test]
 async fn test_named_struct() {
     let req = Request::builder().uri("/").body(()).unwrap();
-    let (mut parts, ()) = req.into_parts();
+
+    let (mut parts, _) = req.into_parts();
     let _ = MyStruct::from_request_parts(&mut parts).await.unwrap();
 }
 
-#[cot::test]
+#[tokio::test]
 async fn test_unit_struct() {
     let req = Request::builder().uri("/").body(()).unwrap();
-    let (mut parts, ()) = req.into_parts();
+
+    let (mut parts, _) = req.into_parts();
     let _ = MyUnitStruct::from_request_parts(&mut parts).await.unwrap();
 }
 
-#[cot::test]
+#[tokio::test]
 async fn test_tuple_struct() {
     let req = Request::builder().uri("/").body(()).unwrap();
-    let (mut parts, ()) = req.into_parts();
+
+    let (mut parts, _) = req.into_parts();
     let _ = MyTupleStruct::from_request_parts(&mut parts).await.unwrap();
 }
