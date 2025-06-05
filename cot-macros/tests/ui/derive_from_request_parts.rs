@@ -10,6 +10,9 @@ struct MyStruct {
 #[derive(FromRequestParts)]
 struct MyUnitStruct;
 
+#[derive(FromRequestParts)]
+struct MyTupleStruct(DummyExtractor, DummyExtractor);
+
 struct DummyExtractor;
 
 impl FromRequestParts for DummyExtractor {
