@@ -1,5 +1,5 @@
-use cot::http::request::Parts;
 use cot::http::Request;
+use cot::http::request::Parts;
 use cot::request::extractors::FromRequestParts;
 
 #[derive(FromRequestParts)]
