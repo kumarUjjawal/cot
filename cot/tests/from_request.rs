@@ -26,23 +26,20 @@ impl FromRequestParts for DummyExtractor {
 #[tokio::test]
 async fn test_named_struct() {
     let req = Request::builder().uri("/").body(()).unwrap();
-
-    let (mut parts, _) = req.into_parts();
+    let (mut parts, ()) = req.into_parts();
     let _ = MyStruct::from_request_parts(&mut parts).await.unwrap();
 }
 
 #[tokio::test]
 async fn test_unit_struct() {
     let req = Request::builder().uri("/").body(()).unwrap();
-
-    let (mut parts, _) = req.into_parts();
+    let (mut parts, ()) = req.into_parts();
     let _ = MyUnitStruct::from_request_parts(&mut parts).await.unwrap();
 }
 
 #[tokio::test]
 async fn test_tuple_struct() {
     let req = Request::builder().uri("/").body(()).unwrap();
-
-    let (mut parts, _) = req.into_parts();
+    let (mut parts, ()) = req.into_parts();
     let _ = MyTupleStruct::from_request_parts(&mut parts).await.unwrap();
 }
