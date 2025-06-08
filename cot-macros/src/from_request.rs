@@ -33,16 +33,9 @@ pub(super) fn impl_from_request_parts_for_struct(
             }
 
             Fields::Unit => {
-                return quote! {
-                    #[automatically_derived]
-                    impl #cot::request::extractors::FromRequestParts for #struct_name {
-                        async fn from_request_parts(
-                            _parts: &mut #cot::http::request::Parts,
-                        ) -> #cot::Result<Self> {
-                            Ok(Self)
-                        }
-                    }
-                };
+                quote! {
+                    Self
+                }
             }
         },
         _ => return Error::custom("Only structs can derive `FromRequestParts`").write_errors(),
