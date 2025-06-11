@@ -200,3 +200,4 @@ pub type Method = http::Method;
 /// }
 /// ```
 pub use cot_macros::FromRequestParts;
+pub use cot_macros::SelectChoice;
