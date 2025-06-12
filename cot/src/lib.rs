@@ -172,32 +172,3 @@ pub type StatusCode = http::StatusCode;
 
 /// A type alias for an HTTP method.
 pub type Method = http::Method;
-
-/// Derives `FromRequestParts` for a struct.
-///
-/// This derive macro is intended to help extract multiple request parts
-/// in an Axum handler using a custom struct. Each field's type must
-/// implement `FromRequestParts`.
-///
-/// # Example
-///
-/// ```rust
-/// use axum::extract::FromRequestParts;
-/// use http::request::Parts;
-///
-/// #[derive(cot_macros::FromRequestParts)]
-/// struct AuthenticatedUser {
-///     user_id: UserId,
-///     session: SessionInfo,
-/// }
-/// ```
-///
-/// This allows using `AuthenticatedUser` as a single extractor:
-///
-/// ```rust
-/// async fn handler(user: AuthenticatedUser) {
-///     // You now have both user_id and session
-/// }
-/// ```
-pub use cot_macros::FromRequestParts;
-pub use cot_macros::SelectChoice;
