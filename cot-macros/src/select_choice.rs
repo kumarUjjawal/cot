@@ -1,7 +1,8 @@
-use crate::cot_ident;
 use darling::Error;
 use quote::quote;
 use syn::{Data, Variant};
+
+use crate::cot_ident;
 
 pub(super) fn impl_select_choice_for_enum(ast: &syn::DeriveInput) -> proc_macro2::TokenStream {
     let enum_name = &ast.ident;
