@@ -14,7 +14,7 @@ pub(super) fn impl_select_choice_for_enum(ast: &syn::DeriveInput) -> proc_macro2
     };
 
     let variant_idents = variants.iter().map(|v: &Variant| &v.ident);
-    let variant_ids = variants.iter().map(|v: &Variant| {
+    let _variant_ids = variants.iter().map(|v: &Variant| {
         let name = v.ident.to_string().to_lowercase();
         quote! { #name }
     });
