@@ -1,10 +1,20 @@
-use darling::Error;
+use darling::{Error, FromVariant};
 use quote::quote;
-use syn::{Data, Variant};
+use syn::{Data, DeriveInput};
 
 use crate::cot_ident;
 
-pub(super) fn impl_select_choice_for_enum(ast: &syn::DeriveInput) -> proc_macro2::TokenStream {
+#[derive(FromVariant, Debug)]
+#[darling(attributes(select, select_choice))]
+struct SelectChoiceVariant {
+    ident: syn::Ident,
+    #[darling(default)]
+    id: Option<String>,
+    #[darling(default)]
+    name: Option<String>,
+}
+
+pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::TokenStream {
     let enum_name = &ast.ident;
     let cot = cot_ident();
 
@@ -13,34 +23,47 @@ pub(super) fn impl_select_choice_for_enum(ast: &syn::DeriveInput) -> proc_macro2
         _ => return Error::custom("SelectChoice can only be derived for enums").write_errors(),
     };
 
-    let variant_idents = variants.iter().map(|v: &Variant| &v.ident);
-    let _variant_ids = variants.iter().map(|v: &Variant| {
-        let name = v.ident.to_string().to_lowercase();
-        quote! { #name }
-    });
+    if variants.is_empty() {
+        return Error::custom("SelectChoice cannot be derived for empty enums").write_errors();
+    }
+
+    // Parse variants using darling
+    let darling_variants: Vec<SelectChoiceVariant> = match variants
+        .iter()
+        .map(SelectChoiceVariant::from_variant)
+        .collect::<Result<_, _>>()
+    {
+        Ok(vs) => vs,
+        Err(e) => return e.write_errors(),
+    };
 
     // default_choices
+    let variant_idents: Vec<_> = darling_variants.iter().map(|v| &v.ident).collect();
     let default_choices = quote! { vec![ #(Self::#variant_idents),* ] };
 
     // from_str
-    let from_str_match_arms = variants.iter().map(|v| {
+    let from_str_match_arms = darling_variants.iter().map(|v| {
         let ident = &v.ident;
-        let name = ident.to_string().to_lowercase();
-        quote! { #name => Ok(Self::#ident), }
+        let id =
+            v.id.clone()
+                .unwrap_or_else(|| ident.to_string().to_lowercase());
+        quote! { #id => Ok(Self::#ident), }
     });
 
     // id
-    let id_match_arms = variants.iter().map(|v| {
+    let id_match_arms = darling_variants.iter().map(|v| {
         let ident = &v.ident;
-        let name = ident.to_string().to_lowercase();
-        quote! { Self::#ident => #name, }
+        let id =
+            v.id.clone()
+                .unwrap_or_else(|| ident.to_string().to_lowercase());
+        quote! { Self::#ident => #id, }
     });
 
     // to_string
-    let to_string_match_arms = variants.iter().map(|v| {
+    let to_string_match_arms = darling_variants.iter().map(|v| {
         let ident = &v.ident;
-        let name = ident.to_string();
-        quote! { Self::#ident => #name, }
+        let display = v.name.clone().unwrap_or_else(|| ident.to_string());
+        quote! { Self::#ident => #display, }
     });
 
     quote! {

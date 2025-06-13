@@ -14,6 +14,7 @@ enum MixedCase {
     SnakeCase,
 }
 
+// Attribute overrides for id and name/display
 #[derive(SelectChoice, Debug, PartialEq, Eq)]
 enum WithOverrides {
     #[select_choice(id = "custom", name = "Custom Display")]
@@ -27,9 +28,3 @@ enum WithOverrides {
 }
 
 fn main() {}
-
-// The following should fail to compile: macro must not support empty enums
-/*
-#[derive(SelectChoice, Debug, PartialEq, Eq)]
-enum EmptyEnum {}
-*/
