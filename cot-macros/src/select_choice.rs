@@ -39,7 +39,6 @@ pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::Tok
 
     // default_choices
     let variant_idents: Vec<_> = darling_variants.iter().map(|v| &v.ident).collect();
-    let default_choices = quote! { vec![ #(Self::#variant_idents),* ] };
 
     // from_str
     let from_str_match_arms = darling_variants.iter().map(|v| {
@@ -53,9 +52,7 @@ pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::Tok
     // id
     let id_match_arms = darling_variants.iter().map(|v| {
         let ident = &v.ident;
-        let id =
-            v.id.clone()
-                .unwrap_or_else(|| ident.to_string().to_lowercase());
+        let id = v.id.clone().unwrap_or_else(|| ident.to_string());
         quote! { Self::#ident => #id, }
     });
 
@@ -69,25 +66,26 @@ pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::Tok
     quote! {
         #[automatically_derived]
         impl #cot::form::fields::SelectChoice for #enum_name {
-            fn default_choices() -> Vec<Self> {
-                #default_choices
+            fn default_choices() -> ::std::vec::Vec<Self> {
+                ::std::vec![ #(Self::#variant_idents),* ]
             }
-            fn from_str(s: &str) -> Result<Self, #cot::form::FormFieldValidationError> {
+            fn from_str(s: &::std::primitive::str) -> ::core::result::Result<Self, #cot::form::FormFieldValidationError> {
                 match s {
                     #( #from_str_match_arms )*
-                    _ => Err(#cot::form::FormFieldValidationError::invalid_value(s.to_owned())),
+                    _ => ::core::result::Result::Err(#cot::form::FormFieldValidationError::invalid_value(::std::string::String::from(s))),
                 }
             }
-            fn id(&self) -> String {
-                match self {
-                    #( #id_match_arms )*
-                }.to_string()
-            }
-            fn to_string(&self) -> String {
-                match self {
-                    #( #to_string_match_arms )*
-                }.to_string()
-            }
+        fn id(&self) -> ::std::string::String {
+            ::std::string::ToString::to_string(&match self {
+                #( #id_match_arms )*
+            })
+        }
+
+        fn to_string(&self) -> ::std::string::String {
+            ::std::string::ToString::to_string(&match self {
+                #( #to_string_match_arms )*
+            })
+        }
         }
     }
 }

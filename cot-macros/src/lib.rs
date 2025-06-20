@@ -204,7 +204,7 @@ pub fn derive_from_request_parts(input: TokenStream) -> TokenStream {
     token_stream.into()
 }
 
-#[proc_macro_derive(SelectChoice, attributes(select, select_choice))]
+#[proc_macro_derive(SelectChoice, attributes(select_choice))]
 pub fn derive_select_choice(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(input as syn::DeriveInput);
     let token_stream = impl_select_choice_for_enum(&ast);
