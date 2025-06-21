@@ -11,7 +11,7 @@ enum Status {
 #[derive(SelectChoice, Debug, PartialEq, Eq)]
 enum MixedCase {
     FooBar,
-    BAZ,
+    Baz,
     SnakeCase,
 }
 
@@ -44,8 +44,8 @@ mod tests {
     fn mixedcase_ids_and_names() {
         assert_eq!(MixedCase::FooBar.id(), "FooBar");
         assert_eq!(MixedCase::FooBar.to_string(), "FooBar");
-        assert_eq!(MixedCase::BAZ.id(), "BAZ");
-        assert_eq!(MixedCase::BAZ.to_string(), "BAZ");
+        assert_eq!(MixedCase::Baz.id(), "Baz");
+        assert_eq!(MixedCase::Baz.to_string(), "Baz");
         assert_eq!(MixedCase::SnakeCase.id(), "SnakeCase");
         assert_eq!(MixedCase::SnakeCase.to_string(), "SnakeCase");
     }
@@ -83,5 +83,3 @@ mod tests {
         );
     }
 }
-
-fn main() {}
