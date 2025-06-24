@@ -82,4 +82,25 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn status_id_roundtrip() {
+        for value in Status::default_choices() {
+            assert_eq!(Status::from_str(&value.id()), Ok(value));
+        }
+    }
+
+    #[test]
+    fn mixedcase_id_roundtrip() {
+        for value in MixedCase::default_choices() {
+            assert_eq!(MixedCase::from_str(&value.id()), Ok(value));
+        }
+    }
+
+    #[test]
+    fn with_overrides_id_roundtrip() {
+        for value in WithOverrides::default_choices() {
+            assert_eq!(WithOverrides::from_str(&value.id()), Ok(value));
+        }
+    }
 }

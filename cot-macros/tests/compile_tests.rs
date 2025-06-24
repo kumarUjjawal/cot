@@ -66,4 +66,5 @@ fn derive_from_struct() {
 fn derive_select_choice() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/derive_select_choice.rs");
+    t.compile_fail("tests/ui/derive_select_choice_fail.rs");
 }

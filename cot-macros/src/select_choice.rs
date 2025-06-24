@@ -5,7 +5,7 @@ use syn::{Data, DeriveInput};
 use crate::cot_ident;
 
 #[derive(FromVariant, Debug)]
-#[darling(attributes(select, select_choice))]
+#[darling(attributes(select_choice))]
 struct SelectChoiceVariant {
     ident: syn::Ident,
     #[darling(default)]
@@ -43,10 +43,9 @@ pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::Tok
     // from_str
     let from_str_match_arms = darling_variants.iter().map(|v| {
         let ident = &v.ident;
-        let id =
-            v.id.clone()
-                .unwrap_or_else(|| ident.to_string().to_lowercase());
-        quote! { #id => Ok(Self::#ident), }
+        let id = v.id.clone().unwrap_or_else(|| ident.to_string());
+        let id_lit = syn::LitStr::new(&id, proc_macro2::Span::call_site());
+        quote! { #id_lit => Ok(Self::#ident), }
     });
 
     // id
