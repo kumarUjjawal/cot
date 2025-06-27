@@ -15,6 +15,7 @@
 // not implementing Copy for them
 #![allow(missing_copy_implementations)]
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
@@ -22,6 +23,7 @@ use derive_builder::Builder;
 use derive_more::with_trait::{Debug, From};
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
+use thiserror::Error;
 use time::{OffsetDateTime, UtcOffset};
 
 /// The configuration for a project.
@@ -31,6 +33,7 @@ use time::{OffsetDateTime, UtcOffset};
 #[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(build_fn(skip, error = std::convert::Infallible))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct ProjectConfig {
     /// Debug mode flag.
     ///
@@ -329,8 +332,8 @@ impl ProjectConfigBuilder {
 /// let config = AuthBackendConfig::Database;
 /// ```
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AuthBackendConfig {
     /// No authentication backend.
     ///
@@ -362,6 +365,7 @@ pub enum AuthBackendConfig {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(build_fn(skip, error = std::convert::Infallible))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct DatabaseConfig {
     /// The URL of the database, possibly with username, password, and other
     /// options.
@@ -463,6 +467,7 @@ impl DatabaseConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(build_fn(skip, error = std::convert::Infallible))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct StaticFilesConfig {
     /// The URL prefix for the static files to be served at (which should
     /// typically end with a slash). The default is `/static/`.
@@ -559,8 +564,8 @@ pub struct StaticFilesConfig {
 ///
 /// This is used as part of the [`StaticFilesConfig`] struct.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum StaticFilesPathRewriteMode {
     /// No rewriting. The path to the static files is returned as is (with the
     /// URL prefix, if any).
@@ -642,6 +647,7 @@ impl StaticFilesConfig {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(build_fn(skip, error = std::convert::Infallible))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct MiddlewareConfig {
     /// The configuration for the live reload middleware.
     pub live_reload: LiveReloadMiddlewareConfig,
@@ -702,6 +708,7 @@ impl MiddlewareConfigBuilder {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(build_fn(skip, error = std::convert::Infallible))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct LiveReloadMiddlewareConfig {
     /// Whether the live reload middleware is enabled.
     ///
@@ -750,6 +757,178 @@ impl LiveReloadMiddlewareConfigBuilder {
     }
 }
 
+/// The configuration for the session store type.
+///
+/// This enum represents the different types of stores that can be used to
+/// persist session data. The default is to use an in-memory store, but other
+/// options are available like database storage, file-based storage, or
+/// cache-based storage.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// use cot::config::{CacheUrl, SessionStoreTypeConfig};
+///
+/// // Using in-memory storage (default)
+/// let memory_config = SessionStoreTypeConfig::Memory;
+///
+/// // Using file-based storage
+/// let file_config = SessionStoreTypeConfig::File {
+///     path: PathBuf::from("/tmp/sessions"),
+/// };
+///
+/// // Using cache-based storage with Redis
+/// let cache_config = SessionStoreTypeConfig::Cache {
+///     uri: CacheUrl::from("redis://localhost:6379"),
+/// };
+/// ```
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum SessionStoreTypeConfig {
+    /// In-memory session storage.
+    ///
+    /// This uses a simple in-memory store that does not persist sessions across
+    /// application restarts. This is the default, and is suitable for
+    /// development or testing environments.
+    #[default]
+    Memory,
+
+    /// Database-backed session storage.
+    ///
+    /// This stores session data in the configured database. This requires the
+    /// "db" feature to be enabled.
+    #[cfg(feature = "db")]
+    Database,
+
+    /// File-based session storage.
+    ///
+    /// This stores session data in files on the local filesystem. The path to
+    /// the directory where the session files will be stored must be specified.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use cot::config::SessionStoreTypeConfig;
+    ///
+    /// let config = SessionStoreTypeConfig::File {
+    ///     path: PathBuf::from("/tmp/sessions"),
+    /// };
+    /// ```
+    #[cfg(feature = "json")]
+    File {
+        /// The path to the directory where session files will be stored.
+        path: PathBuf,
+    },
+
+    /// Cache-based session storage.
+    ///
+    /// This stores session data in a cache service like Redis. The URI to the
+    /// cache service must be specified.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{CacheUrl, SessionStoreTypeConfig};
+    ///
+    /// let config = SessionStoreTypeConfig::Cache {
+    ///     uri: CacheUrl::from("redis://localhost:6379"),
+    /// };
+    /// ```
+    #[cfg(feature = "cache")]
+    Cache {
+        /// The URI to the cache service.
+        uri: CacheUrl,
+    },
+}
+
+/// The configuration for the session store.
+///
+/// This is used as part of the [`SessionMiddlewareConfig`] struct and wraps a
+/// [`SessionStoreTypeConfig`] which specifies the actual type of store to use.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// use cot::config::{SessionStoreConfig, SessionStoreTypeConfig};
+///
+/// let config = SessionStoreConfig::builder()
+///     .store_type(SessionStoreTypeConfig::File {
+///         path: PathBuf::from("/tmp/sessions"),
+///     })
+///     .build();
+/// ```
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
+#[builder(build_fn(skip, error = std::convert::Infallible))]
+#[serde(default)]
+pub struct SessionStoreConfig {
+    /// The type of session store to use.
+    ///
+    /// This determines how and where session data is stored. The default is
+    /// to use an in-memory store.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{CacheUrl, SessionStoreConfig, SessionStoreTypeConfig};
+    ///
+    /// let config = SessionStoreConfig::builder()
+    ///     .store_type(SessionStoreTypeConfig::Cache {
+    ///         uri: CacheUrl::from("redis://localhost:6379"),
+    ///     })
+    ///     .build();
+    /// ```
+    #[serde(flatten)]
+    pub store_type: SessionStoreTypeConfig,
+}
+
+impl SessionStoreConfig {
+    /// Create a new [`SessionStoreConfigBuilder`] to build a
+    /// [`SessionStoreConfig`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{SessionStoreConfig, SessionStoreTypeConfig};
+    ///
+    /// let config = SessionStoreConfig::builder()
+    ///     .store_type(SessionStoreTypeConfig::Memory)
+    ///     .build();
+    /// ```
+    #[must_use]
+    pub fn builder() -> SessionStoreConfigBuilder {
+        SessionStoreConfigBuilder::default()
+    }
+}
+
+impl SessionStoreConfigBuilder {
+    /// Builds the session store configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{CacheUrl, SessionStoreConfig, SessionStoreTypeConfig};
+    ///
+    /// let config = SessionStoreConfig::builder()
+    ///     .store_type(SessionStoreTypeConfig::Cache {
+    ///         uri: CacheUrl::from("redis://localhost:6379"),
+    ///     })
+    ///     .build();
+    /// ```
+    #[must_use]
+    pub fn build(&self) -> SessionStoreConfig {
+        SessionStoreConfig {
+            store_type: self.store_type.clone().unwrap_or_default(),
+        }
+    }
+}
+
 /// The [`SameSite`] attribute of a cookie determines how strictly browsers send
 /// cookies on cross-site requests. When not explicitly configured, it defaults
 /// to `Strict`, which provides the most restrictive security posture.
@@ -763,6 +942,7 @@ impl LiveReloadMiddlewareConfigBuilder {
 ///  [`SameSite`]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies#controlling_third-party_cookies_with_samesite
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SameSite {
     /// Only send cookie for same-site requests.
     #[default]
@@ -820,6 +1000,7 @@ fn chrono_datetime_to_time_offsetdatetime(dt: DateTime<FixedOffset>) -> OffsetDa
 /// ```
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Expiry {
     /// The cookie expires when the browser session ends.
     ///
@@ -880,6 +1061,7 @@ impl From<Expiry> for tower_sessions::Expiry {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(build_fn(skip, error = std::convert::Infallible))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct SessionMiddlewareConfig {
     /// The [`Secure`] of the cookie determines whether the session middleware
     /// is secure.
@@ -1056,6 +1238,27 @@ pub struct SessionMiddlewareConfig {
     /// ```
     #[serde(with = "crate::serializers::session_expiry_time")]
     pub expiry: Expiry,
+
+    /// What session store to use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::{
+    ///     CacheUrl, SessionMiddlewareConfig, SessionStoreConfig, SessionStoreTypeConfig,
+    /// };
+    ///
+    /// let config = SessionMiddlewareConfig::builder()
+    ///     .store(
+    ///         SessionStoreConfig::builder()
+    ///             .store_type(SessionStoreTypeConfig::Cache {
+    ///                 uri: CacheUrl::from("redis://localhost:6379"),
+    ///             })
+    ///             .build(),
+    ///     )
+    ///     .build();
+    /// ```
+    pub store: SessionStoreConfig,
 }
 
 impl SessionMiddlewareConfig {
@@ -1081,9 +1284,16 @@ impl SessionMiddlewareConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use cot::config::SessionMiddlewareConfig;
+    /// use cot::config::{SessionMiddlewareConfig, SessionStoreConfig, SessionStoreTypeConfig};
     ///
-    /// let config = SessionMiddlewareConfig::builder().secure(false).build();
+    /// let config = SessionMiddlewareConfig::builder()
+    ///     .secure(false)
+    ///     .store(
+    ///         SessionStoreConfig::builder()
+    ///             .store_type(SessionStoreTypeConfig::Memory)
+    ///             .build(),
+    ///     )
+    ///     .build();
     /// ```
     #[must_use]
     pub fn build(&self) -> SessionMiddlewareConfig {
@@ -1096,6 +1306,7 @@ impl SessionMiddlewareConfigBuilder {
             path: self.path.clone().unwrap_or(String::from("/")),
             always_save: self.always_save.unwrap_or(false),
             expiry: self.expiry.unwrap_or_default(),
+            store: self.store.clone().unwrap_or_default(),
         }
     }
 }
@@ -1274,21 +1485,147 @@ impl From<&str> for DatabaseUrl {
 #[cfg(feature = "db")]
 impl Debug for DatabaseUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut new_url = self.0.clone();
-        if !new_url.username().is_empty() {
-            new_url
-                .set_username("********")
-                .expect("set_username should succeed if username is present");
-        }
-        if new_url.password().is_some() {
-            new_url
-                .set_password(Some("********"))
-                .expect("set_password should succeed if password is present");
-        }
+        let new_url = conceal_url_parts(&self.0);
 
         f.debug_tuple("DatabaseUrl")
             .field(&new_url.as_str())
             .finish()
+    }
+}
+
+/// An error returned when parsing a `CacheType` from a string.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseCacheTypeError {
+    /// The input did not match any supported cache type.
+    #[error("unsupported cache type: `{0}`")]
+    Unsupported(String),
+}
+
+/// A structure that holds the type of Cache.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg(feature = "cache")]
+#[non_exhaustive]
+pub enum CacheType {
+    /// A redis cache type.
+    #[cfg(feature = "redis")]
+    Redis,
+}
+
+#[cfg(feature = "cache")]
+impl TryFrom<&str> for CacheType {
+    type Error = ParseCacheTypeError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            #[cfg(feature = "redis")]
+            "redis" => Ok(CacheType::Redis),
+            other => Err(ParseCacheTypeError::Unsupported(other.to_owned())),
+        }
+    }
+}
+
+#[cfg(feature = "cache")]
+impl std::str::FromStr for CacheType {
+    type Err = ParseCacheTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        CacheType::try_from(s)
+    }
+}
+
+/// A URL for caches.
+///
+/// This is a wrapper over the [`url::Url`] type, which is used to store the
+/// URL of a cache. It parses the URL and ensures that it is valid.
+///
+/// # Security
+///
+/// The implementation of the [`Debug`] trait for this type hides the password
+/// from the debug output.
+///
+/// # Examples
+///
+/// ```
+/// use cot::config::CacheUrl;
+///
+/// let url = CacheUrl::from("redis://user:password@localhost:6379/0");
+/// ```
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+#[cfg(feature = "cache")]
+pub struct CacheUrl(url::Url);
+
+#[cfg(feature = "cache")]
+impl CacheUrl {
+    /// Returns the string representation of the cache URL.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cot::config::CacheUrl;
+    ///
+    /// let url = CacheUrl::from("redis://user:password@localhost:6379/0");
+    /// assert_eq!(url.as_str(), "redis://user:password@localhost:6379/0");
+    /// ```
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[cfg(feature = "cache")]
+impl From<String> for CacheUrl {
+    fn from(url: String) -> Self {
+        Self(url::Url::parse(&url).expect("invalid  cache URL"))
+    }
+}
+
+#[cfg(feature = "cache")]
+impl From<&str> for CacheUrl {
+    fn from(url: &str) -> Self {
+        Self(url::Url::parse(url).expect("invalid cache URL"))
+    }
+}
+
+#[cfg(feature = "cache")]
+impl TryFrom<CacheUrl> for CacheType {
+    type Error = ParseCacheTypeError;
+
+    fn try_from(value: CacheUrl) -> Result<Self, Self::Error> {
+        CacheType::try_from(value.0.scheme())
+    }
+}
+
+#[cfg(feature = "cache")]
+impl Debug for CacheUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let new_url = conceal_url_parts(&self.0);
+
+        f.debug_tuple("CacheUrl").field(&new_url.as_str()).finish()
+    }
+}
+
+#[cfg(any(feature = "cache", feature = "db"))]
+fn conceal_url_parts(url: &url::Url) -> url::Url {
+    let mut new_url = url.clone();
+    if !new_url.username().is_empty() {
+        new_url
+            .set_username("********")
+            .expect("set_username should succeed if username is present");
+    }
+    if new_url.password().is_some() {
+        new_url
+            .set_password(Some("********"))
+            .expect("set_password should succeed if password is present");
+    }
+    new_url
+}
+
+#[cfg(feature = "cache")]
+impl std::fmt::Display for CacheUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.as_str())
     }
 }
 
@@ -1429,6 +1766,63 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cache")]
+    fn session_store_valid_toml() {
+        let toml_content = r#"
+            debug = true
+            register_panic_hook = true
+            secret_key = "123abc"
+            fallback_secret_keys = ["456def", "789ghi"]
+            auth_backend = { type = "none" }
+
+            [static_files]
+            url = "/assets/"
+            rewrite = "none"
+            cache_timeout = "1h"
+
+            [middlewares]
+            live_reload.enabled = true
+            [middlewares.session]
+            secure = false
+        "#;
+
+        let store_configs = [
+            (
+                r#"
+            [middlewares.session.store]
+            type = "memory"
+            "#,
+                SessionStoreTypeConfig::Memory,
+            ),
+            (
+                r#"
+            [middlewares.session.store]
+            type = "cache"
+            uri = "redis://redis"
+            "#,
+                SessionStoreTypeConfig::Cache {
+                    uri: CacheUrl::from("redis://redis"),
+                },
+            ),
+            (
+                r#"
+            [middlewares.session.store]
+            type = "file"
+            path = "session/path/"
+            "#,
+                SessionStoreTypeConfig::File {
+                    path: PathBuf::from("session/path"),
+                },
+            ),
+        ];
+
+        for (cfg_toml, cfg_type) in store_configs {
+            let full_cfg_str = format!("{toml_content}\n{cfg_toml}");
+            let config = ProjectConfig::from_toml(&full_cfg_str).unwrap();
+            assert_eq!(config.middlewares.session.store.store_type, cfg_type);
+        }
+    }
+    #[test]
     fn from_toml_invalid() {
         let toml_content = r"
             debug = true
@@ -1457,5 +1851,77 @@ mod tests {
             config.static_files.rewrite,
             StaticFilesPathRewriteMode::QueryParam
         );
+    }
+    #[test]
+    #[cfg(feature = "redis")]
+    fn cache_type_from_str_redis() {
+        assert_eq!(CacheType::try_from("redis").unwrap(), CacheType::Redis);
+    }
+
+    #[test]
+    #[cfg(feature = "cache")]
+    fn cache_type_from_str_unknown() {
+        for &s in &["", "foo", "redis://foo"] {
+            assert_eq!(
+                CacheType::try_from(s),
+                Err(ParseCacheTypeError::Unsupported(s.to_owned()))
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "redis")]
+    fn cache_type_from_cacheurl() {
+        let url = CacheUrl::from("redis://localhost/");
+        assert_eq!(CacheType::try_from(url.clone()).unwrap(), CacheType::Redis);
+
+        let other = CacheUrl::from("http://example.com/");
+        assert_eq!(
+            CacheType::try_from(other),
+            Err(ParseCacheTypeError::Unsupported("http".to_string()))
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "cache")]
+    fn cacheurl_from_str_and_string() {
+        let s = "http://example.com/foo";
+        let u1 = CacheUrl::from(s);
+        let u2 = CacheUrl::from(s.to_string());
+        assert_eq!(u1, u2);
+        assert_eq!(u1.as_str(), s);
+    }
+
+    #[test]
+    #[cfg(feature = "cache")]
+    #[should_panic(expected = "invalid cache URL")]
+    fn cacheurl_from_invalid_str_panics() {
+        let _ = CacheUrl::from("not a url");
+    }
+
+    #[test]
+    #[cfg(feature = "cache")]
+    fn cacheurl_as_str_roundtrip() {
+        let raw = "https://user:pass@host:1234/path?query#frag";
+        let cu = CacheUrl::from(raw);
+        assert_eq!(cu.as_str(), url::Url::parse(raw).unwrap().as_str());
+    }
+
+    #[test]
+    #[cfg(feature = "cache")]
+    fn cacheurl_debug_masks_credentials() {
+        let raw = "https://user:secret@host:1234/path";
+        let cu = CacheUrl::from(raw);
+        let dbg = format!("{cu:?}");
+        assert!(dbg.starts_with("CacheUrl(\"https://********:********@host:1234/path\")"));
+    }
+
+    #[test]
+    fn conceal_url_details_leaves_no_credentials() {
+        let raw = "ftp://alice:alicepwd@server/";
+        let parsed = url::Url::parse(raw).unwrap();
+        let concealed = conceal_url_parts(&parsed);
+        assert_eq!(concealed.username(), "********");
+        assert_eq!(concealed.password(), Some("********"));
     }
 }

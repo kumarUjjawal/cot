@@ -5,6 +5,8 @@
 //! session management, adding security headers, and more.
 
 use std::borrow::Cow;
+use std::fmt::Debug;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
@@ -13,13 +15,22 @@ use futures_util::TryFutureExt;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use tower::Service;
-use tower_sessions::{MemoryStore, SessionManagerLayer};
+use tower_sessions::service::PlaintextCookie;
+use tower_sessions::{SessionManagerLayer, SessionStore};
 
-use crate::config::{Expiry, SameSite};
+#[cfg(feature = "cache")]
+use crate::config::CacheType;
+use crate::config::{Expiry, SameSite, SessionStoreTypeConfig};
 use crate::error::ErrorRepr;
 use crate::project::MiddlewareContext;
 use crate::request::Request;
 use crate::response::Response;
+use crate::session::store::SessionStoreWrapper;
+#[cfg(feature = "json")]
+use crate::session::store::file::FileStore;
+use crate::session::store::memory::MemoryStore;
+#[cfg(feature = "redis")]
+use crate::session::store::redis::RedisStore;
 use crate::{Body, Error};
 
 /// Middleware that converts a any [`http::Response`] generic type to a
@@ -249,21 +260,22 @@ where
     })
 }
 
+type DynamicSessionStore = SessionManagerLayer<SessionStoreWrapper, PlaintextCookie>;
+
 /// A middleware that provides session management.
 ///
 /// By default, it uses an in-memory store for session data.
 #[derive(Debug, Clone)]
 pub struct SessionMiddleware {
-    inner: SessionManagerLayer<MemoryStore>,
+    inner: DynamicSessionStore,
 }
 
 impl SessionMiddleware {
     /// Crates a new instance of [`SessionMiddleware`].
     #[must_use]
-    pub fn new() -> Self {
-        let store = MemoryStore::default();
-        let layer = SessionManagerLayer::new(store);
-        Self { inner: layer }
+    pub fn new<S: SessionStore + Send + Sync + 'static>(store: S) -> Self {
+        let layer = SessionManagerLayer::new(SessionStoreWrapper::new(Arc::new(store)));
+        SessionMiddleware { inner: layer }
     }
 
     /// Creates a new instance of [`SessionMiddleware`] from the application
@@ -289,10 +301,18 @@ impl SessionMiddleware {
     ///     }
     /// }
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the session store type is not supported.
     #[must_use]
     pub fn from_context(context: &MiddlewareContext) -> Self {
         let session_cfg = &context.config().middlewares.session;
-        let mut middleware = Self::new()
+        let store_type = session_cfg.store.store_type.clone();
+        let boxed_store = Self::config_to_session_store(store_type);
+        let arc_store = Arc::from(boxed_store);
+        let layer = SessionManagerLayer::new(SessionStoreWrapper::new(arc_store));
+        let mut middleware = SessionMiddleware { inner: layer }
             .secure(session_cfg.secure)
             .path(session_cfg.path.clone())
             .name(session_cfg.name.clone())
@@ -313,14 +333,15 @@ impl SessionMiddleware {
     ///
     /// ```
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().secure(false);
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).secure(false);
     /// ```
     #[must_use]
     pub fn secure(self, secure: bool) -> Self {
-        Self {
-            inner: self.inner.with_secure(secure),
-        }
+        let layer = self.inner.with_secure(secure);
+        SessionMiddleware { inner: layer }
     }
 
     /// Enables or disables the `HttpOnly` flag on the session cookie.
@@ -331,8 +352,10 @@ impl SessionMiddleware {
     ///
     /// ```
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().http_only(false);
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).http_only(false);
     /// ```
     #[must_use]
     pub fn http_only(self, http_only: bool) -> Self {
@@ -347,8 +370,10 @@ impl SessionMiddleware {
     ///
     /// ```
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().domain("example.com");
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).domain("example.com");
     /// ```
     #[must_use]
     pub fn domain<D: Into<Cow<'static, str>>>(self, domain: D) -> Self {
@@ -364,8 +389,10 @@ impl SessionMiddleware {
     /// ```
     /// use cot::config::SameSite;
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().same_site(SameSite::Lax);
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).same_site(SameSite::Lax);
     /// ```
     #[must_use]
     pub fn same_site(self, same_site: SameSite) -> Self {
@@ -380,8 +407,10 @@ impl SessionMiddleware {
     ///
     /// ```
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().name("session_id");
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).name("session_id");
     /// ```
     #[must_use]
     pub fn name<N: Into<Cow<'static, str>>>(self, name: N) -> Self {
@@ -396,8 +425,10 @@ impl SessionMiddleware {
     ///
     /// ```
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().path("/api");
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).path("/api");
     /// ```
     #[must_use]
     pub fn path<P: Into<Cow<'static, str>>>(self, path: P) -> Self {
@@ -414,8 +445,10 @@ impl SessionMiddleware {
     ///
     /// ```
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
-    /// let middleware = SessionMiddleware::new().always_save(true);
+    /// let store = MemoryStore::new();
+    /// let middleware = SessionMiddleware::new(store).always_save(true);
     /// ```
     #[must_use]
     pub fn always_save(self, always_save: bool) -> Self {
@@ -433,9 +466,11 @@ impl SessionMiddleware {
     ///
     /// use cot::config::Expiry;
     /// use cot::middleware::SessionMiddleware;
+    /// use cot::session::store::memory::MemoryStore;
     ///
+    /// let store = MemoryStore::new();
     /// let middleware =
-    ///     SessionMiddleware::new().expiry(Expiry::OnInactivity(Duration::from_secs(3600)));
+    ///     SessionMiddleware::new(store).expiry(Expiry::OnInactivity(Duration::from_secs(3600)));
     /// ```
     #[must_use]
     pub fn expiry(self, expiry: Expiry) -> Self {
@@ -443,16 +478,49 @@ impl SessionMiddleware {
             inner: self.inner.with_expiry(expiry.into()),
         }
     }
+
+    /// Convert a [`SessionStoreTypeConfig`] variant into a valid
+    /// [`SessionStore`]
+    fn config_to_session_store(
+        config: SessionStoreTypeConfig,
+    ) -> Box<dyn SessionStore + Send + Sync> {
+        match config {
+            SessionStoreTypeConfig::Memory => Box::new(MemoryStore::new()),
+            #[cfg(feature = "json")]
+            SessionStoreTypeConfig::File { path } => Box::new(
+                FileStore::new(path)
+                    .unwrap_or_else(|err| panic!("could not create File store: {err}")),
+            ),
+            #[cfg(feature = "cache")]
+            SessionStoreTypeConfig::Cache { ref uri } => {
+                let cache_type = CacheType::try_from(uri.clone())
+                    .unwrap_or_else(|e| panic!("could not convert cache URI `{uri}`: {e}"));
+                match cache_type {
+                    #[cfg(feature = "redis")]
+                    CacheType::Redis => {
+                        Box::new(RedisStore::new(uri).unwrap_or_else(|e| {
+                            panic!("could not connect to Redis at `{uri}`: {e}")
+                        }))
+                    }
+                }
+            }
+            #[cfg(feature = "db")]
+            SessionStoreTypeConfig::Database => {
+                unimplemented!();
+            }
+        }
+    }
 }
 
 impl Default for SessionMiddleware {
     fn default() -> Self {
-        Self::new()
+        let memory_store = MemoryStore::default();
+        Self::new(memory_store)
     }
 }
 
 impl<S> tower::Layer<S> for SessionMiddleware {
-    type Service = <SessionManagerLayer<MemoryStore> as tower::Layer<
+    type Service = <DynamicSessionStore as tower::Layer<
         <SessionWrapperLayer as tower::Layer<S>>::Service,
     >>::Service;
 
@@ -813,8 +881,8 @@ mod tests {
             assert!(req.extensions().get::<Session>().is_some());
             Ok::<_, Error>(Response::new(Body::empty()))
         });
-
-        let mut svc = SessionMiddleware::new().layer(svc);
+        let store = MemoryStore::default();
+        let mut svc = SessionMiddleware::new(store).layer(svc);
 
         let request = TestRequestBuilder::get("/").build();
 
@@ -829,8 +897,10 @@ mod tests {
 
             Ok::<_, Error>(Response::new(Body::empty()))
         });
-
-        let mut svc = SessionMiddleware::new().domain("example.com").layer(svc);
+        let store = MemoryStore::default();
+        let mut svc = SessionMiddleware::new(store)
+            .domain("example.com")
+            .layer(svc);
 
         let request = TestRequestBuilder::get("/").build();
 
@@ -860,7 +930,8 @@ mod tests {
             Ok::<_, Error>(Response::new(Body::empty()))
         });
 
-        let mut svc = SessionMiddleware::new().secure(false).layer(svc);
+        let store = MemoryStore::default();
+        let mut svc = SessionMiddleware::new(store).secure(false).layer(svc);
 
         let request = TestRequestBuilder::get("/").build();
 
