@@ -1,5 +1,4 @@
 use cot::form::fields::SelectChoice;
-use cot_macros::SelectChoice;
 
 #[derive(SelectChoice, Debug, PartialEq, Eq)]
 enum Status {
