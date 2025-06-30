@@ -20,11 +20,21 @@ pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::Tok
 
     let variants = match &ast.data {
         Data::Enum(data_enum) => &data_enum.variants,
-        _ => return Error::custom("SelectChoice can only be derived for enums").write_errors(),
+        _ => return Error::custom("`SelectChoice` can only be derived for enums").write_errors(),
     };
 
     if variants.is_empty() {
-        return Error::custom("SelectChoice cannot be derived for empty enums").write_errors();
+        return Error::custom("`SelectChoice` cannot be derived for empty enums").write_errors();
+    }
+
+    for variant in variants {
+        if !variant.fields.is_empty() {
+            return Error::custom(
+                "`SelectChoice` can only be derived for enums with unit variants",
+            )
+            .with_span(&variant)
+            .write_errors();
+        }
     }
 
     // Parse variants using darling
@@ -68,23 +78,31 @@ pub(super) fn impl_select_choice_for_enum(ast: &DeriveInput) -> proc_macro2::Tok
             fn default_choices() -> ::std::vec::Vec<Self> {
                 ::std::vec![ #(Self::#variant_idents),* ]
             }
-            fn from_str(s: &::std::primitive::str) -> ::core::result::Result<Self, #cot::form::FormFieldValidationError> {
+
+            fn from_str(
+                s: &::std::primitive::str
+            ) -> ::core::result::Result<Self, #cot::form::FormFieldValidationError> {
                 match s {
                     #( #from_str_match_arms )*
-                    _ => ::core::result::Result::Err(#cot::form::FormFieldValidationError::invalid_value(::std::string::String::from(s))),
+                    _ => ::core::result::Result::Err(
+                        #cot::form::FormFieldValidationError::invalid_value(
+                            ::std::string::String::from(s)
+                        ),
+                    ),
                 }
             }
-        fn id(&self) -> ::std::string::String {
-            ::std::string::ToString::to_string(&match self {
-                #( #id_match_arms )*
-            })
-        }
 
-        fn to_string(&self) -> ::std::string::String {
-            ::std::string::ToString::to_string(&match self {
-                #( #to_string_match_arms )*
-            })
-        }
+            fn id(&self) -> ::std::string::String {
+                ::std::string::ToString::to_string(&match self {
+                    #( #id_match_arms )*
+                })
+            }
+
+            fn to_string(&self) -> ::std::string::String {
+                ::std::string::ToString::to_string(&match self {
+                    #( #to_string_match_arms )*
+                })
+            }
         }
     }
 }
