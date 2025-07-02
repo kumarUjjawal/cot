@@ -172,3 +172,5 @@ pub type StatusCode = http::StatusCode;
 
 /// A type alias for an HTTP method.
 pub type Method = http::Method;
+
+pub use crate::form::AsFormField;

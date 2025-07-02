@@ -112,3 +112,17 @@ fn derive_select_choice() {
     t.compile_fail("tests/ui/derive_select_choice_struct.rs");
     t.compile_fail("tests/ui/derive_select_choice_empty_enum.rs");
 }
+
+#[rustversion::attr(
+    not(nightly),
+    ignore = "only test on nightly for consistent error messages"
+)]
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "unsupported operation: extern static `pidfd_spawnp` is not supported by Miri"
+)]
+fn derive_as_form_field() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/ui/derive_as_form_field.rs");
+}

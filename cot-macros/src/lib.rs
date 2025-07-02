@@ -1,4 +1,5 @@
 mod admin;
+mod as_form_field;
 mod dbtest;
 mod form;
 mod from_request;
@@ -16,6 +17,7 @@ use quote::quote;
 use syn::{ItemFn, parse_macro_input};
 
 use crate::admin::impl_admin_model_for_struct;
+use crate::as_form_field::impl_as_form_field_for_enum;
 use crate::dbtest::fn_to_dbtest;
 use crate::form::impl_form_for_struct;
 use crate::from_request::impl_from_request_parts_for_struct;
@@ -208,5 +210,12 @@ pub fn derive_from_request_parts(input: TokenStream) -> TokenStream {
 pub fn derive_select_choice(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(input as syn::DeriveInput);
     let token_stream = impl_select_choice_for_enum(&ast);
+    token_stream.into()
+}
+
+#[proc_macro_derive(AsFormField)]
+pub fn derive_as_form_field(input: TokenStream) -> TokenStream {
+    let ast = syn::parse_macro_input!(input as syn::DeriveInput);
+    let token_stream = impl_as_form_field_for_enum(&ast);
     token_stream.into()
 }
