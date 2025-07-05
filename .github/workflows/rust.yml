@@ -382,8 +382,8 @@ jobs:
     needs: ["build"]
 
     env:
-    RUSTC_WRAPPER: ""
-    SCCACHE_GHA_ENABLED: ""
+      RUSTC_WRAPPER: ""
+      SCCACHE_GHA_ENABLED: ""
 
     steps:
       - name: Checkout source
