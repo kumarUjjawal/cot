@@ -374,3 +374,27 @@ jobs:
         with:
           log-level: warn
           command: check licenses
+
+  semver-check:
+    if: github.event_name == 'pull_request'
+    name: Semver compatibility check
+    runs-on: ubuntu-latest
+    needs: ["build"]
+
+    env:
+      RUSTC_WRAPPER: ""
+      SCCACHE_GHA_ENABLED: ""
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run cargo-semver-checks
+        uses: obi1kenobi/cargo-semver-checks-action@v2.8
+        with:
+          rust-toolchain: stable
+          baseline-rev: ${{ github.event.pull_request.base.sha }}
+          feature-group: all-features
+          verbose: true
