@@ -28,12 +28,11 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use derive_more::with_trait::Debug;
-use http::request::Parts;
 use tracing::debug;
 
 use crate::error::ErrorRepr;
 use crate::handler::{BoxRequestHandler, RequestHandler, into_box_request_handler};
-use crate::request::{AppName, PathParams, Request, RequestExt, RouteName};
+use crate::request::{AppName, PathParams, Request, RequestExt, RequestHead, RouteName};
 use crate::response::{Response, not_found_response};
 use crate::router::path::{CaptureResult, PathMatcher, ReverseParamMap};
 use crate::{Error, Result};
@@ -954,10 +953,10 @@ impl Urls {
         }
     }
 
-    pub(crate) fn from_parts(request_parts: &Parts) -> Self {
+    pub(crate) fn from_parts(request_head: &RequestHead) -> Self {
         Self {
-            app_name: request_parts.app_name().map(ToOwned::to_owned),
-            router: Arc::clone(request_parts.router()),
+            app_name: request_head.app_name().map(ToOwned::to_owned),
+            router: Arc::clone(request_head.router()),
         }
     }
 
