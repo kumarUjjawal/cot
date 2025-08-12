@@ -18,10 +18,8 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
             Fields::Unnamed(f) if f.unnamed.len() == 1 => {
                 quote! { #name::#ident(inner) => inner.into_response(), }
             }
-            _ => {
-                return Error::custom("Only tuple variants with a single field are supported")
-                    .write_errors();
-            }
+            _ => Error::custom("Only tuple variants with a single field are supported")
+                .write_errors(),
         }
     });
 

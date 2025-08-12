@@ -4,18 +4,29 @@ use cot::response::IntoResponse;
 
 #[derive(DeriveApiOperationResponse)]
 enum MyResponse {
-    A(Dummy),
-    B(Dummy),
+    A(DummyA),
+    B(DummyB),
 }
 
-struct Dummy;
+struct DummyA;
 
-impl IntoResponse for Dummy {
+impl IntoResponse for DummyA {
     fn into_response(self) -> cot::Result<cot::response::Response> {
         unimplemented!()
     }
 }
 
-impl ApiOperationResponse for Dummy {}
+impl ApiOperationResponse for DummyA {}
+
+struct DummyB;
+
+impl IntoResponse for DummyB {
+    fn into_response(self) -> cot::Result<cot::response::Response> {
+        unimplemented!()
+    }
+}
+
+impl ApiOperationResponse for DummyB {}
+
 
 fn main() {}
