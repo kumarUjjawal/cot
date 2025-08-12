@@ -6,13 +6,14 @@ mod main_fn;
 mod model;
 mod query;
 mod select_choice;
+mod api_response_enum;
 
 use darling::Error;
 use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use proc_macro_crate::crate_name;
 use quote::quote;
-use syn::{ItemFn, parse_macro_input};
+use syn::{ItemFn, DeriveInput, parse_macro_input};
 
 use crate::admin::impl_admin_model_for_struct;
 use crate::dbtest::fn_to_dbtest;
@@ -22,6 +23,7 @@ use crate::main_fn::{fn_to_cot_e2e_test, fn_to_cot_main, fn_to_cot_test};
 use crate::model::impl_model_for_struct;
 use crate::query::{Query, query_to_tokens};
 use crate::select_choice::impl_select_choice_for_enum;
+use crate::api_response_enum::impl_api_operation_response_for_enum;
 
 #[proc_macro_derive(Form, attributes(form))]
 pub fn derive_form(input: TokenStream) -> TokenStream {
@@ -209,4 +211,10 @@ pub fn derive_select_choice(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(input as syn::DeriveInput);
     let token_stream = impl_select_choice_for_enum(&ast);
     token_stream.into()
+}
+
+#[proc_macro_derive(ApiOperationResponse)]
+pub fn derive_api_operation_response(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    impl_api_operation_response_for_enum(&ast).into()
 }
