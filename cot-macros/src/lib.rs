@@ -1,4 +1,5 @@
 mod admin;
+mod api_response_enum;
 mod dbtest;
 mod form;
 mod from_request;
@@ -6,35 +7,34 @@ mod main_fn;
 mod model;
 mod query;
 mod select_choice;
-mod api_response_enum;
 
-use darling::Error;
 use darling::ast::NestedMeta;
+use darling::Error;
 use proc_macro::TokenStream;
 use proc_macro_crate::crate_name;
 use quote::quote;
-use syn::{ItemFn, DeriveInput, parse_macro_input};
+use syn::{parse_macro_input, DeriveInput, ItemFn};
 
 use crate::admin::impl_admin_model_for_struct;
+use crate::api_response_enum::impl_api_operation_response_for_enum;
 use crate::dbtest::fn_to_dbtest;
 use crate::form::impl_form_for_struct;
 use crate::from_request::impl_from_request_head_for_struct;
 use crate::main_fn::{fn_to_cot_e2e_test, fn_to_cot_main, fn_to_cot_test};
 use crate::model::impl_model_for_struct;
-use crate::query::{Query, query_to_tokens};
+use crate::query::{query_to_tokens, Query};
 use crate::select_choice::impl_select_choice_for_enum;
-use crate::api_response_enum::impl_api_operation_response_for_enum;
 
 #[proc_macro_derive(Form, attributes(form))]
 pub fn derive_form(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as syn::DeriveInput);
+    let ast = parse_macro_input!(input as DeriveInput);
     let token_stream = impl_form_for_struct(&ast);
     token_stream.into()
 }
 
 #[proc_macro_derive(AdminModel)]
 pub fn derive_admin_model(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as syn::DeriveInput);
+    let ast = parse_macro_input!(input as DeriveInput);
     let token_stream = impl_admin_model_for_struct(&ast);
     token_stream.into()
 }
@@ -115,7 +115,7 @@ pub fn model(args: TokenStream, input: TokenStream) -> TokenStream {
             return TokenStream::from(Error::from(e).write_errors());
         }
     };
-    let mut ast = parse_macro_input!(input as syn::DeriveInput);
+    let mut ast = parse_macro_input!(input as DeriveInput);
     let token_stream = impl_model_for_struct(&attr_args, &mut ast);
     token_stream.into()
 }
@@ -201,14 +201,14 @@ pub(crate) fn cot_ident() -> proc_macro2::TokenStream {
 
 #[proc_macro_derive(FromRequestHead)]
 pub fn derive_from_request_head(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as syn::DeriveInput);
+    let ast = parse_macro_input!(input as DeriveInput);
     let token_stream = impl_from_request_head_for_struct(&ast);
     token_stream.into()
 }
 
 #[proc_macro_derive(SelectChoice, attributes(select_choice))]
 pub fn derive_select_choice(input: TokenStream) -> TokenStream {
-    let ast = syn::parse_macro_input!(input as syn::DeriveInput);
+    let ast = syn::parse_macro_input!(input as DeriveInput);
     let token_stream = impl_select_choice_for_enum(&ast);
     token_stream.into()
 }

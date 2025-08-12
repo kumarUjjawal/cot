@@ -30,6 +30,7 @@ quote = { workspace = true, features = ["proc-macro"] }
 syn.workspace = true
 
 [dev-dependencies]
-cot = { path = "../cot", features = ["test"] }
+cot = { path = "../cot", features = ["test", "openapi"] }
+# Needed so generated `aide::openapi::Response` resolves in UI tests
 trybuild.workspace = true
 rustversion.workspace = true

@@ -106,12 +106,16 @@
 #[cfg(feature = "swagger-ui")]
 pub mod swagger_ui;
 
+// Re-export core OpenAPI types so trait implementations can name them.
+// Re-export core OpenAPI types so trait implementations can name them.
+pub use aide::openapi::{Operation, RequestBody, Response as OpenApiResponse, StatusCode};
+
 use std::marker::PhantomData;
 use std::pin::Pin;
 
 use aide::openapi::{
-    MediaType, Operation, Parameter, ParameterData, ParameterSchemaOrContent, PathItem, PathStyle,
-    QueryStyle, ReferenceOr, RequestBody, StatusCode,
+    MediaType, Parameter, ParameterData, ParameterSchemaOrContent, PathItem, PathStyle,
+    QueryStyle, ReferenceOr,
 };
 use indexmap::IndexMap;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
