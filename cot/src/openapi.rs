@@ -106,8 +106,6 @@
 #[cfg(feature = "swagger-ui")]
 pub mod swagger_ui;
 
-// Re-export core OpenAPI types so trait implementations can name them.
-// Re-export core OpenAPI types so trait implementations can name them.
 use std::marker::PhantomData;
 use std::pin::Pin;
 

@@ -9,7 +9,7 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
     let cot = cot_ident();
     let variants = match &ast.data {
         Data::Enum(e) => &e.variants,
-        _ => return Error::custom("Only enums can derive `ApiOperationResponse`").write_errors(),
+        _ => return Error::custom("only enums can derive `ApiOperationResponse`").write_errors(),
     };
 
     let arms_into = variants.iter().map(|v| {
@@ -18,8 +18,10 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
             Fields::Unnamed(f) if f.unnamed.len() == 1 => {
                 quote! { #name::#ident(inner) => inner.into_response(), }
             }
-            _ => Error::custom("Only tuple variants with a single field are supported")
-                .write_errors(),
+            _ => {
+                return Error::custom("only tuple variants with a single field are supported")
+                    .write_errors()
+            }
         }
     });
 
@@ -27,7 +29,7 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
         let ty = match &v.fields {
             Fields::Unnamed(f) if f.unnamed.len() == 1 => &f.unnamed.first().unwrap().ty,
             _ => {
-                return Error::custom("Only tuple variants with a single field are supported")
+                return Error::custom("only tuple variants with a single field are supported")
                     .write_errors();
             }
         };
