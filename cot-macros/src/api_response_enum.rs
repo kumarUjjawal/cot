@@ -20,7 +20,7 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
             }
             _ => {
                 return Error::custom("only tuple variants with a single field are supported")
-                    .write_errors()
+                    .write_errors();
             }
         }
     });

@@ -110,10 +110,9 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 use aide::openapi::{
-    MediaType, Parameter, ParameterData, ParameterSchemaOrContent, PathItem, PathStyle, QueryStyle,
-    ReferenceOr,
+    MediaType, Operation, Parameter, ParameterData, ParameterSchemaOrContent, PathItem, PathStyle,
+    QueryStyle, ReferenceOr, RequestBody, StatusCode,
 };
-use aide::openapi::{Operation, RequestBody, Response as OpenApiResponse, StatusCode};
 use indexmap::IndexMap;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::Value;

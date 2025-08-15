@@ -1,4 +1,4 @@
-error: Only enums can derive `ApiOperationResponse`
+error: only enums can derive `ApiOperationResponse`
  --> tests/ui/derive_api_operation_response_enum.rs:3:10
   |
 3 | #[derive(ApiOperationResponse)]

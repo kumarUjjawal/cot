@@ -1,4 +1,4 @@
-error: Only tuple variants with a single field are supported
+error: only tuple variants with a single field are supported
  --> tests/ui/derive_api_operation_response_invalid_variant_unit.rs:3:10
   |
 3 | #[derive(ApiOperationResponse)]
