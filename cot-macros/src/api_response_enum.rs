@@ -42,6 +42,7 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
         #[automatically_derived]
         impl #cot::response::IntoResponse for #name {
             fn into_response(self) -> #cot::Result<#cot::response::Response> {
+                use #cot::response::IntoResponse;
                 match self {
                     #(#arms_into)*
                 }
