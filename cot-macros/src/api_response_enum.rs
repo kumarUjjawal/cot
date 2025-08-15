@@ -54,8 +54,8 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
                 operation: &mut #cot::openapi::Operation,
                 route_context: &#cot::openapi::RouteContext<'_>,
                 schema_generator: &mut #cot::schemars::SchemaGenerator,
-            ) -> Vec<(Option<#cot::openapi::StatusCode>, #cot::openapi::OpenApiResponse)> {
-                let mut responses = Vec::new();
+            ) -> ::std::vec::Vec<(::core::option::Option<#cot::openapi::StatusCode>, #cot::openapi::OpenApiResponse)> {
+                let mut responses = ::std::vec::Vec::new();
                 #(#arms_api)*
                 responses
             }
