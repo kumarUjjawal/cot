@@ -15,6 +15,9 @@ pub use bytes::Bytes;
 pub use cot_macros::ModelHelper;
 pub use tokio;
 
+#[cfg(feature = "openapi")]
+pub use aide::openapi::{Operation, RequestBody, Response as OpenApiResponse, StatusCode};
+
 // used in the CLI
 #[cfg(feature = "db")]
 pub use crate::utils::graph::apply_permutation;

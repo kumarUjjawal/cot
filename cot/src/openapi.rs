@@ -113,7 +113,7 @@ use aide::openapi::{
     MediaType, Parameter, ParameterData, ParameterSchemaOrContent, PathItem, PathStyle, QueryStyle,
     ReferenceOr,
 };
-pub use aide::openapi::{Operation, RequestBody, Response as OpenApiResponse, StatusCode};
+use aide::openapi::{Operation, RequestBody, Response as OpenApiResponse, StatusCode};
 use indexmap::IndexMap;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::Value;

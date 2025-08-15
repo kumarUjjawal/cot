@@ -54,10 +54,10 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
         #[automatically_derived]
         impl #cot::openapi::ApiOperationResponse for #name {
             fn api_operation_responses(
-                operation: &mut #cot::openapi::Operation,
+                operation: &mut #cot::__private::Operation,
                 route_context: &#cot::openapi::RouteContext<'_>,
                 schema_generator: &mut #cot::schemars::SchemaGenerator,
-            ) -> ::std::vec::Vec<(::core::option::Option<#cot::openapi::StatusCode>, #cot::openapi::OpenApiResponse)> {
+            ) -> ::std::vec::Vec<(::core::option::Option<#cot::__private::StatusCode>, #cot::__private::OpenApiResponse)> {
                 let mut responses = ::std::vec::Vec::new();
                 #(#arms_api)*
                 responses
