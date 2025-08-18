@@ -13,4 +13,3 @@ error: `match` arm with no body
   |          ^^^^^^^^^^^^^^^^^^^^
   |
   = note: this error originates in the derive macro `ApiOperationResponse` (in Nightly builds, run with -Z macro-backtrace for more info)
-
