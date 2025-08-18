@@ -25,7 +25,12 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
 
     let arms_api = variants.iter().map(|v| {
         let ty = match &v.fields {
-            Fields::Unnamed(f) if f.unnamed.len() == 1 => &f.unnamed.first().unwrap().ty,
+            Fields::Unnamed(f) if f.unnamed.len() == 1 => {
+                &f.unnamed
+                    .first()
+                    .expect("`ApiOperationResponse` expects a single-field tuple variant")
+                    .ty
+            }
             _ => {
                 return Error::custom("only tuple variants with a single field are supported")
                     .write_errors();
