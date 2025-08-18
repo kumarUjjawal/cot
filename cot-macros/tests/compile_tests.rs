@@ -128,5 +128,6 @@ fn derive_api_operation_response() {
     t.compile_fail("tests/ui/derive_api_operation_response_enum.rs");
     t.compile_fail("tests/ui/derive_api_operation_response_missing_trait_impl.rs");
     t.compile_fail("tests/ui/derive_api_operation_response_invalid_variant_unit.rs");
+    t.compile_fail("tests/ui/derive_api_operation_response_invalid_variant_multi_tuple.rs");
     t.compile_fail("tests/ui/derive_api_operation_response_invalid_variant_struct.rs");
 }
