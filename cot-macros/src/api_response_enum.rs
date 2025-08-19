@@ -28,7 +28,7 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
             Fields::Unnamed(f) if f.unnamed.len() == 1 => {
                 &f.unnamed
                     .first()
-                    .expect("`ApiOperationResponse` expects a single-field tuple variant")
+                    .expect("exactly one element is guaranteed by match condition")
                     .ty
             }
             _ => {
