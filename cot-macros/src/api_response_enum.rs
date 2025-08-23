@@ -12,36 +12,32 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
         _ => return Error::custom("only enums can derive `ApiOperationResponse`").write_errors(),
     };
 
-    let arms_into = variants.iter().map(|v| {
+    let mut errors = proc_macro2::TokenStream::new();
+    let mut arms_into = Vec::new();
+    let mut arms_api = Vec::new();
+
+    for v in variants.iter() {
         let ident = &v.ident;
         match &v.fields {
             Fields::Unnamed(f) if f.unnamed.len() == 1 => {
-                quote! { #name::#ident(inner) => inner.into_response(), }
-            }
-            _ => Error::custom("only tuple variants with a single field are supported")
-                .write_errors(),
-        }
-    });
-
-    let arms_api = variants.iter().map(|v| {
-        let ty = match &v.fields {
-            Fields::Unnamed(f) if f.unnamed.len() == 1 => {
-                &f.unnamed
+                let ty = &f
+                    .unnamed
                     .first()
                     .expect("exactly one element is guaranteed by match condition")
                     .ty
             }
             _ => {
-                return Error::custom("only tuple variants with a single field are supported")
-                    .write_errors();
+                errors.extend(
+                    Error::custom("only tuple variants with a single field are supported")
+                        .write_errors(),
+                );
             }
-        };
-        quote! {
-            responses.extend(<#ty as #cot::openapi::ApiOperationResponse>::api_operation_responses(
-                operation, route_context, schema_generator
-            ));
         }
-    });
+    }
+
+    if !errors.is_empty() {
+        return errors;
+    }
 
     quote! {
         #[automatically_derived]
