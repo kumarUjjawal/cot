@@ -13,8 +13,8 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
     };
 
     let mut errors = proc_macro2::TokenStream::new();
-    let mut arms_into = Vec::new();
-    let mut arms_api = Vec::new();
+    let mut arms_into: ::std::vec::Vec<proc_macro2::TokenStream> = ::std::vec::Vec::new();
+    let mut arms_api: ::std::vec::Vec<proc_macro2::TokenStream> = ::std::vec::Vec::new();
 
     for v in variants.iter() {
         let ident = &v.ident;
@@ -24,7 +24,13 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
                     .unnamed
                     .first()
                     .expect("exactly one element is guaranteed by match condition")
-                    .ty
+                    .ty;
+                arms_into.push(quote! {
+                    Self::#ident(inner) => inner.into_response(),
+                });
+                arms_api.push(quote! {
+                    responses.extend(<#ty as #cot::openapi::ApiOperationResponse>::api_operation_responses(operation, route_context, schema_generator));
+                });
             }
             _ => {
                 errors.extend(
