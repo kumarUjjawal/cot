@@ -16,7 +16,7 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
     let mut arms_into: ::std::vec::Vec<proc_macro2::TokenStream> = ::std::vec::Vec::new();
     let mut arms_api: ::std::vec::Vec<proc_macro2::TokenStream> = ::std::vec::Vec::new();
 
-    for v in variants.iter() {
+    for v in variants {
         let ident = &v.ident;
         match &v.fields {
             Fields::Unnamed(f) if f.unnamed.len() == 1 => {
