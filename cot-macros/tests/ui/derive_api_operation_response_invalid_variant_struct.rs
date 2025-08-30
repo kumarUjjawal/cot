@@ -1,4 +1,4 @@
-use cot_macros::ApiOperationResponse;
+use cot::openapi::ApiOperationResponse;
 
 #[derive(ApiOperationResponse)]
 enum MyResponse {

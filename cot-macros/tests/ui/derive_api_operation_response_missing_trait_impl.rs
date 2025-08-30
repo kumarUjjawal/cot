@@ -1,6 +1,6 @@
-use cot_macros::ApiOperationResponse as DeriveApiOperationResponse;
+use cot::openapi::ApiOperationResponse;
 
-#[derive(DeriveApiOperationResponse)]
+#[derive(ApiOperationResponse)]
 enum MyResponse {
     A(Dummy),
 }

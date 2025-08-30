@@ -13,8 +13,8 @@ pub(super) fn impl_api_operation_response_for_enum(ast: &DeriveInput) -> proc_ma
     };
 
     let mut errors = proc_macro2::TokenStream::new();
-    let mut arms_into: ::std::vec::Vec<proc_macro2::TokenStream> = ::std::vec::Vec::new();
-    let mut arms_api: ::std::vec::Vec<proc_macro2::TokenStream> = ::std::vec::Vec::new();
+    let mut arms_into: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut arms_api: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for v in variants {
         let ident = &v.ident;

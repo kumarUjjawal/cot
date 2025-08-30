@@ -113,6 +113,7 @@ use aide::openapi::{
     MediaType, Operation, Parameter, ParameterData, ParameterSchemaOrContent, PathItem, PathStyle,
     QueryStyle, ReferenceOr, RequestBody, StatusCode,
 };
+pub use cot_macros::ApiOperationResponse;
 use indexmap::IndexMap;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::Value;
