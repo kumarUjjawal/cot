@@ -1,7 +1,6 @@
-use cot::openapi::ApiOperationResponse;
 use cot::response::IntoResponse;
 
-#[derive(IntoResponse, ApiOperationResponse)]
+#[derive(IntoResponse)]
 enum MyResponse {
     A(DummyA),
     B(DummyB),
@@ -15,8 +14,6 @@ impl IntoResponse for DummyA {
     }
 }
 
-impl ApiOperationResponse for DummyA {}
-
 struct DummyB;
 
 impl IntoResponse for DummyB {
@@ -24,7 +21,5 @@ impl IntoResponse for DummyB {
         unimplemented!()
     }
 }
-
-impl ApiOperationResponse for DummyB {}
 
 fn main() {}
