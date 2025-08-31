@@ -130,8 +130,8 @@ use aide::openapi::{
 ///   applied to structs or unions.
 /// - **Tuple variants with one field**: Each enum variant must be a tuple
 ///   variant with exactly one field (e.g., `Variant(Type)`).
-/// - **Field types must implement ApiOperationResponse**: Each field type must
-///   implement the [`ApiOperationResponse`] trait.
+/// - **Field types must implement `ApiOperationResponse`**: Each field type
+///   must implement the [`ApiOperationResponse`] trait.
 ///
 /// # Generated Implementation
 ///

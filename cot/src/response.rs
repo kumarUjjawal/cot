@@ -28,7 +28,7 @@ mod into_response;
 ///   applied to structs or unions.
 /// - **Tuple variants with one field**: Each enum variant must be a tuple
 ///   variant with exactly one field (e.g., `Variant(Type)`).
-/// - **Field types must implement IntoResponse**: Each field type must
+/// - **Field types must implement `IntoResponse`**: Each field type must
 ///   implement the [`IntoResponse`] trait.
 ///
 /// # Generated Implementation
