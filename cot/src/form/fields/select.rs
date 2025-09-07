@@ -356,7 +356,7 @@ impl<T: SelectChoice + Send> crate::form::AsFormField for ::std::collections::Ve
     fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
         let values = check_required_multiple(field)?;
         let mut out = ::std::collections::VecDeque::new();
-        for id in values.iter() {
+        for id in values {
             out.push_back(T::from_str(id)?);
         }
         Ok(out)
@@ -373,7 +373,7 @@ impl<T: SelectChoice + Send> crate::form::AsFormField for ::std::collections::Li
     fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
         let values = check_required_multiple(field)?;
         let mut out = ::std::collections::LinkedList::new();
-        for id in values.iter() {
+        for id in values {
             out.push_back(T::from_str(id)?);
         }
         Ok(out)
@@ -384,15 +384,15 @@ impl<T: SelectChoice + Send> crate::form::AsFormField for ::std::collections::Li
     }
 }
 
-impl<T: SelectChoice + Eq + ::std::hash::Hash + Send> crate::form::AsFormField
-    for ::std::collections::HashSet<T>
+impl<T: SelectChoice + Eq + ::std::hash::Hash + Send, S: ::std::hash::BuildHasher + Default>
+    crate::form::AsFormField for ::std::collections::HashSet<T, S>
 {
     type Type = SelectMultipleField<T>;
 
     fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
         let values = check_required_multiple(field)?;
-        let mut out = ::std::collections::HashSet::new();
-        for id in values.iter() {
+        let mut out = ::std::collections::HashSet::default();
+        for id in values {
             out.insert(T::from_str(id)?);
         }
         Ok(out)
@@ -411,7 +411,7 @@ impl<T: SelectChoice + Eq + ::std::hash::Hash + Send> crate::form::AsFormField
     fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
         let values = check_required_multiple(field)?;
         let mut out = ::indexmap::IndexSet::new();
-        for id in values.iter() {
+        for id in values {
             out.insert(T::from_str(id)?);
         }
         Ok(out)
