@@ -6,4 +6,3 @@ struct NotAnEnum {
 }
 
 fn main() {}
-
