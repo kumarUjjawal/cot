@@ -139,6 +139,47 @@ use crate::form::{
 };
 use crate::html::HtmlTag;
 
+macro_rules! impl_as_form_field_mult_collection {
+    (($($generics:tt)+) => $collection:ty, $element:ty $(where $($where_clause:tt)+)?) => {
+        impl<$($generics)+> crate::form::AsFormField for $collection
+        $(where $($where_clause)+)?
+        {
+            type Type = crate::form::fields::SelectMultipleField<$element>;
+
+            fn clean_value(
+                field: &Self::Type,
+            ) -> Result<Self, crate::form::FormFieldValidationError> {
+                let values = crate::form::fields::check_required_multiple(field)?;
+                values.iter().map(|id| <$element>::from_str(id)).collect()
+            }
+
+            fn to_field_value(&self) -> String {
+                String::new()
+            }
+        }
+    };
+    (() => $collection:ty, $element:ty $(where $($where_clause:tt)+)?) => {
+        impl crate::form::AsFormField for $collection
+        $(where $($where_clause)+)?
+        {
+            type Type = crate::form::fields::SelectMultipleField<$element>;
+
+            fn clean_value(
+                field: &Self::Type,
+            ) -> Result<Self, crate::form::FormFieldValidationError> {
+                let values = crate::form::fields::check_required_multiple(field)?;
+                values.iter().map(|id| <$element>::from_str(id)).collect()
+            }
+
+            fn to_field_value(&self) -> String {
+                String::new()
+            }
+        }
+    };
+}
+
+pub(crate) use impl_as_form_field_mult_collection;
+
 impl_form_field!(SelectField, SelectFieldOptions, "a dropdown list", T: SelectChoice + Send);
 
 /// Custom options for a [`SelectField`].
@@ -339,90 +380,26 @@ pub(crate) fn check_required_multiple<T>(
     }
 }
 
-impl<T: SelectChoice + Send> crate::form::AsFormField for ::std::vec::Vec<T> {
-    type Type = SelectMultipleField<T>;
-
-    fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-        let values = check_required_multiple(field)?;
-        values.iter().map(|id| T::from_str(id)).collect()
-    }
-
-    fn to_field_value(&self) -> String {
-        String::new()
-    }
-}
-
-impl<T: SelectChoice + Send> crate::form::AsFormField for ::std::collections::VecDeque<T> {
-    type Type = SelectMultipleField<T>;
-
-    fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-        let values = check_required_multiple(field)?;
-        let mut out = ::std::collections::VecDeque::new();
-        for id in values {
-            out.push_back(T::from_str(id)?);
-        }
-        Ok(out)
-    }
-
-    fn to_field_value(&self) -> String {
-        String::new()
-    }
-}
-
-impl<T: SelectChoice + Send> crate::form::AsFormField for ::std::collections::LinkedList<T> {
-    type Type = SelectMultipleField<T>;
-
-    fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-        let values = check_required_multiple(field)?;
-        let mut out = ::std::collections::LinkedList::new();
-        for id in values {
-            out.push_back(T::from_str(id)?);
-        }
-        Ok(out)
-    }
-
-    fn to_field_value(&self) -> String {
-        String::new()
-    }
-}
-
-impl<T: SelectChoice + Eq + ::std::hash::Hash + Send, S: ::std::hash::BuildHasher + Default>
-    crate::form::AsFormField for ::std::collections::HashSet<T, S>
-{
-    type Type = SelectMultipleField<T>;
-
-    fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-        let values = check_required_multiple(field)?;
-        let mut out = ::std::collections::HashSet::default();
-        for id in values {
-            out.insert(T::from_str(id)?);
-        }
-        Ok(out)
-    }
-
-    fn to_field_value(&self) -> String {
-        String::new()
-    }
-}
-
-impl<T: SelectChoice + Eq + ::std::hash::Hash + Send> crate::form::AsFormField
-    for ::indexmap::IndexSet<T>
-{
-    type Type = SelectMultipleField<T>;
-
-    fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-        let values = check_required_multiple(field)?;
-        let mut out = ::indexmap::IndexSet::new();
-        for id in values {
-            out.insert(T::from_str(id)?);
-        }
-        Ok(out)
-    }
-
-    fn to_field_value(&self) -> String {
-        String::new()
-    }
-}
+impl_as_form_field_mult_collection!((T: SelectChoice + Send) => ::std::vec::Vec<T>, T);
+impl_as_form_field_mult_collection!(
+    (T: SelectChoice + Send) => ::std::collections::VecDeque<T>,
+    T
+);
+impl_as_form_field_mult_collection!(
+    (T: SelectChoice + Send) => ::std::collections::LinkedList<T>,
+    T
+);
+impl_as_form_field_mult_collection!(
+    (
+        T: SelectChoice + Eq + ::std::hash::Hash + Send,
+        S: ::std::hash::BuildHasher + Default
+    ) => ::std::collections::HashSet<T, S>,
+    T
+);
+impl_as_form_field_mult_collection!(
+    (T: SelectChoice + Eq + ::std::hash::Hash + Send) => ::indexmap::IndexSet<T>,
+    T
+);
 
 /// A trait for types that can be used as choices in select fields.
 ///
@@ -646,9 +623,14 @@ pub trait SelectChoice {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::{HashSet, LinkedList, VecDeque};
 
-    #[derive(Debug, Clone, PartialEq)]
+    use indexmap::IndexSet;
+
+    use super::*;
+    use crate::form::AsFormField;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     enum TestChoice {
         Option1,
         Option2,
@@ -961,5 +943,184 @@ mod tests {
         assert_eq!(values.len(), 2); // IndexSet should deduplicate
         assert!(values.contains(&"opt1"));
         assert!(values.contains(&"opt2"));
+    }
+
+    #[cot::test]
+    async fn vec_as_form_field_clean_value() {
+        let mut field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: true,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("opt1"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("opt3"))
+            .await
+            .unwrap();
+
+        let values = Vec::<TestChoice>::clean_value(&field).unwrap();
+        assert_eq!(values, vec![TestChoice::Option1, TestChoice::Option3]);
+    }
+
+    #[cot::test]
+    async fn vec_as_form_field_required_empty() {
+        let field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: true,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        let result = Vec::<TestChoice>::clean_value(&field);
+        assert_eq!(result, Err(FormFieldValidationError::Required));
+    }
+
+    #[cot::test]
+    async fn vec_as_form_field_invalid_value() {
+        let mut field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: false,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("opt1"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("bad"))
+            .await
+            .unwrap();
+
+        let result = Vec::<TestChoice>::clean_value(&field);
+        assert!(matches!(
+            result,
+            Err(FormFieldValidationError::InvalidValue(value)) if value == "bad"
+        ));
+    }
+
+    #[test]
+    fn vec_as_form_field_to_field_value() {
+        let items = vec![TestChoice::Option1, TestChoice::Option2];
+        assert_eq!(items.to_field_value(), "");
+    }
+
+    #[cot::test]
+    async fn vec_deque_as_form_field_clean_value() {
+        let mut field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: false,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("opt2"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("opt1"))
+            .await
+            .unwrap();
+
+        let mut values = VecDeque::<TestChoice>::clean_value(&field).unwrap();
+        assert_eq!(values.pop_front(), Some(TestChoice::Option2));
+        assert_eq!(values.pop_back(), Some(TestChoice::Option1));
+    }
+
+    #[cot::test]
+    async fn linked_list_as_form_field_clean_value() {
+        let mut field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: false,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("opt3"))
+            .await
+            .unwrap();
+
+        let mut values = LinkedList::<TestChoice>::clean_value(&field).unwrap();
+        assert_eq!(values.pop_front(), Some(TestChoice::Option3));
+        assert!(values.is_empty());
+    }
+
+    #[cot::test]
+    async fn hash_set_as_form_field_clean_value() {
+        let mut field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: false,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("opt1"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("opt1"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("opt2"))
+            .await
+            .unwrap();
+
+        let values = HashSet::<TestChoice>::clean_value(&field).unwrap();
+        assert_eq!(values.len(), 2);
+        assert!(values.contains(&TestChoice::Option1));
+        assert!(values.contains(&TestChoice::Option2));
+    }
+
+    #[cot::test]
+    async fn index_set_as_form_field_preserves_order() {
+        let mut field = SelectMultipleField::<TestChoice>::with_options(
+            FormFieldOptions {
+                id: "choices".to_owned(),
+                name: "choices".to_owned(),
+                required: false,
+            },
+            SelectMultipleFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("opt2"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("opt3"))
+            .await
+            .unwrap();
+        field
+            .set_value(FormFieldValue::new_text("opt2"))
+            .await
+            .unwrap();
+
+        let values = IndexSet::<TestChoice>::clean_value(&field).unwrap();
+        let mut iter = values.iter();
+        assert_eq!(iter.next(), Some(&TestChoice::Option2));
+        assert_eq!(iter.next(), Some(&TestChoice::Option3));
+        assert_eq!(iter.next(), None);
     }
 }

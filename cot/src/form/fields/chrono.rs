@@ -10,9 +10,7 @@ use cot::form::FormField;
 use cot::form::fields::impl_form_field;
 use cot::html::HtmlTag;
 
-use crate::form::fields::{
-    SelectChoice, SelectField, SelectMultipleField, Step, check_required, check_required_multiple,
-};
+use crate::form::fields::{SelectChoice, SelectField, Step, check_required};
 use crate::form::{AsFormField, FormFieldValidationError};
 
 impl AsFormField for Weekday {
@@ -29,25 +27,7 @@ impl AsFormField for Weekday {
     }
 }
 
-macro_rules! impl_as_form_field_mult_collection {
-    ($collection_type:ty, $field_type:ty) => {
-        impl AsFormField for $collection_type {
-            type Type = SelectMultipleField<$field_type>;
-
-            fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-                let value = check_required_multiple(field)?;
-
-                value.iter().map(|id| <$field_type>::from_str(id)).collect()
-            }
-
-            fn to_field_value(&self) -> String {
-                String::new()
-            }
-        }
-    };
-}
-
-impl_as_form_field_mult_collection!(WeekdaySet, Weekday);
+crate::form::fields::select::impl_as_form_field_mult_collection!(() => WeekdaySet, Weekday);
 
 const MONDAY_ID: &str = "mon";
 const TUESDAY_ID: &str = "tue";
@@ -716,7 +696,9 @@ mod tests {
     use cot::form::FormFieldValue;
 
     use super::*;
-    use crate::form::fields::{SelectFieldOptions, SelectMultipleFieldOptions};
+    use crate::form::fields::{
+        SelectFieldOptions, SelectMultipleField, SelectMultipleFieldOptions,
+    };
     use crate::form::{FormField, FormFieldOptions};
 
     #[test]
