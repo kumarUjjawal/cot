@@ -29,19 +29,6 @@ impl AsFormField for Weekday {
     }
 }
 
-macro_rules! impl_as_form_field_mult {
-    ($field_type:ty) => {
-        impl_as_form_field_mult_collection!(::std::vec::Vec<$field_type>, $field_type);
-        impl_as_form_field_mult_collection!(::std::collections::VecDeque<$field_type>, $field_type);
-        impl_as_form_field_mult_collection!(
-            ::std::collections::LinkedList<$field_type>,
-            $field_type
-        );
-        impl_as_form_field_mult_collection!(::std::collections::HashSet<$field_type>, $field_type);
-        impl_as_form_field_mult_collection!(::indexmap::IndexSet<$field_type>, $field_type);
-    };
-}
-
 macro_rules! impl_as_form_field_mult_collection {
     ($collection_type:ty, $field_type:ty) => {
         impl AsFormField for $collection_type {
