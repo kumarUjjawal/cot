@@ -9,6 +9,8 @@ use askama::filters::HtmlSafe;
 /// collections (`Vec<T>`, `VecDeque<T>`, `LinkedList<T>`, `HashSet<T>`, and
 /// `indexmap::IndexSet<T>`).
 ///
+/// # Examples
+///
 /// ```
 /// use cot::form::fields::{SelectAsFormField, SelectChoice, SelectField, SelectMultipleField};
 ///
