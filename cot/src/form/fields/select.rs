@@ -1123,4 +1123,103 @@ mod tests {
         assert_eq!(iter.next(), Some(&TestChoice::Option3));
         assert_eq!(iter.next(), None);
     }
+
+    #[derive(SelectChoice, SelectAsFormField, Debug, Clone, PartialEq, Eq, Hash)]
+    enum DerivedStatus {
+        #[select_choice(id = "draft", name = "Draft")]
+        Draft,
+        #[select_choice(id = "published", name = "Published")]
+        Published,
+        #[select_choice(id = "archived", name = "Archived")]
+        Archived,
+    }
+
+    #[test]
+    fn select_as_form_field_render() {
+        let field = SelectField::<DerivedStatus>::with_options(
+            FormFieldOptions {
+                id: "status".to_owned(),
+                name: "status".to_owned(),
+                required: false,
+            },
+            SelectFieldOptions::default(),
+        );
+        let html = field.to_string();
+
+        assert!(html.contains("<select"));
+        assert!(html.contains("name=\"status\""));
+        assert!(html.contains("id=\"status\""));
+        assert!(html.contains("value=\"draft\""));
+        assert!(html.contains("value=\"published\""));
+        assert!(html.contains("value=\"archived\""));
+        assert!(html.contains("Draft"));
+        assert!(html.contains("Published"));
+        assert!(html.contains("Archived"));
+    }
+
+    #[cot::test]
+    async fn select_as_form_field_clean_value_valid() {
+        let mut field = SelectField::<DerivedStatus>::with_options(
+            FormFieldOptions {
+                id: "status".to_owned(),
+                name: "status".to_owned(),
+                required: true,
+            },
+            SelectFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("published"))
+            .await
+            .unwrap();
+
+        let value = DerivedStatus::clean_value(&field).unwrap();
+        assert_eq!(value, DerivedStatus::Published);
+    }
+
+    #[cot::test]
+    async fn select_as_form_field_clean_value_required_empty() {
+        let mut field = SelectField::<DerivedStatus>::with_options(
+            FormFieldOptions {
+                id: "status".to_owned(),
+                name: "status".to_owned(),
+                required: true,
+            },
+            SelectFieldOptions::default(),
+        );
+
+        field.set_value(FormFieldValue::new_text("")).await.unwrap();
+
+        let result = DerivedStatus::clean_value(&field);
+        assert_eq!(result, Err(FormFieldValidationError::Required));
+    }
+
+    #[cot::test]
+    async fn select_as_form_field_clean_value_invalid() {
+        let mut field = SelectField::<DerivedStatus>::with_options(
+            FormFieldOptions {
+                id: "status".to_owned(),
+                name: "status".to_owned(),
+                required: false,
+            },
+            SelectFieldOptions::default(),
+        );
+
+        field
+            .set_value(FormFieldValue::new_text("not-a-valid-id"))
+            .await
+            .unwrap();
+
+        let result = DerivedStatus::clean_value(&field);
+        assert!(matches!(
+            result,
+            Err(FormFieldValidationError::InvalidValue(value)) if value == "not-a-valid-id"
+        ));
+    }
+
+    #[test]
+    fn select_as_form_field_to_field_value() {
+        assert_eq!(DerivedStatus::Draft.to_field_value(), "Draft");
+        assert_eq!(DerivedStatus::Published.to_field_value(), "Published");
+    }
 }
