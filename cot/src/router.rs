@@ -1022,7 +1022,10 @@ macro_rules! reverse_redirect {
             $request,
             $view_name,
             $( $($key = $value),* )?
-        ).map(|url| <$crate::response::Response as $crate::response::ResponseExt>::new_redirect(url))
+        ).map(|url|
+            $crate::response::IntoResponse::into_response($crate::response::Redirect::new(url))
+                .expect("Failed to build response")
+        )
     };
 }
 
